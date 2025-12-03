@@ -1,0 +1,30 @@
+{
+  "name": "syncflow-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SyncFlow - AI-powered full-stack dev assistant for MERN apps",
+  "scripts": {
+    "install:all": "pnpm install",
+    "dev": "pnpm --parallel --filter \"./packages/**\" --filter \"./examples/**\" dev",
+    "dev:agent": "pnpm --filter agent-node dev",
+    "dev:dashboard": "pnpm --filter dashboard-web dev",
+    "dev:example": "pnpm --filter mern-sample-app dev",
+    "build": "pnpm --filter \"./packages/**\" build",
+    "build:agent": "pnpm --filter agent-node build",
+    "build:dashboard": "pnpm --filter dashboard-web build",
+    "clean": "pnpm --recursive exec rm -rf dist node_modules .turbo && rm -rf node_modules",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\""
+  },
+  "keywords": [
+    "mern",
+    "monitoring",
+    "debugging",
+    "developer-tools",
+    "socket.io"
+  ],
+  "author": "Noa Rabin Cohen",
+  "license": "MIT",
+  "devDependencies": {
+    "prettier": "^3.1.1"
+  }
+}
