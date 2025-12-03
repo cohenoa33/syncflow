@@ -1,0 +1,17 @@
+{
+  "name": "syncflow",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+"scripts": {
+  "dev:dashboard": "pnpm --filter dashboard-web dev",
+  "dev:agent": "pnpm --filter agent-node dev",
+  "dev:brain": "pnpm --filter brain-py dev",
+  "dev:all": "pnpm -r dev"
+},
+  "license": "ISC",
+  "packageManager": "pnpm@10.24.0"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@syncflow/agent-node",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+"scripts": {
+  "dev": "tsup src/index.ts --dts --watch",
+  "build": "tsup src/index.ts --dts"
+},
+  "dependencies": {
+    "express": "^5.2.1",
+    "mongoose": "^9.0.0",
+    "socket.io-client": "^4.8.1",
+    "uuid": "^13.0.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.10.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
