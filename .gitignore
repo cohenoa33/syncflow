@@ -1,0 +1,71 @@
+# ----------------------------
+# General
+# ----------------------------
+.DS_Store
+*.log
+logs
+tmp
+temp
+*.tmp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# ----------------------------
+# Node / pnpm / JS
+# ----------------------------
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# ----------------------------
+# Vite / React / Tailwind
+# ----------------------------
+packages/dashboard-web/node_modules/
+packages/dashboard-web/dist/
+packages/dashboard-web/.vite/
+packages/dashboard-web/.cache/
+
+# ----------------------------
+# Python
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.venv/
+venv/
+ENV/
+env/
+pip-wheel-metadata/
+*.sqlite3
+
+# Jupyter / notebooks (if you ever use them)
+.ipynb_checkpoints/
+
+# ----------------------------
+# IDEs / editors
+# ----------------------------
+.vscode/
+.idea/
+*.iml
+
+# ----------------------------
+# OS / misc
+# ----------------------------
+Thumbs.db
