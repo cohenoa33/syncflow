@@ -2,6 +2,8 @@
 
 Example application demonstrating SyncFlow agent integration with a MERN stack backend.
 
+> **Note**: This is a development/demo application. It does not include production features like rate limiting, authentication, or input validation. Do not use in production without proper security measures.
+
 ## Features
 
 - Express REST API with sample routes

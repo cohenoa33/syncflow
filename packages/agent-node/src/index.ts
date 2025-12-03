@@ -14,6 +14,19 @@ export interface Event {
   error?: string;
 }
 
+// Mongoose operations to track
+const MONGOOSE_OPERATIONS = [
+  'find', 
+  'findOne', 
+  'findOneAndUpdate', 
+  'findOneAndDelete',
+  'updateOne', 
+  'updateMany', 
+  'deleteOne', 
+  'deleteMany', 
+  'save'
+] as const;
+
 export class SyncFlowAgent {
   private socket: Socket | null = null;
   private dashboardUrl: string;
@@ -134,10 +147,7 @@ export class SyncFlowAgent {
 
     // Add a global plugin to track all operations
     mongoose.plugin((schema: any) => {
-      const operations = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 
-                          'updateOne', 'updateMany', 'deleteOne', 'deleteMany', 'save'];
-
-      operations.forEach((op) => {
+      MONGOOSE_OPERATIONS.forEach((op) => {
         schema.pre(op, function (this: any) {
           this._syncflowStartTime = Date.now();
         });
