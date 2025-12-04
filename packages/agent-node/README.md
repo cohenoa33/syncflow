@@ -12,15 +12,15 @@ TypeScript agent for MERN stack applications. Automatically captures Express rou
 ## Installation
 
 ```bash
-npm install agent-node
+npm install @syncflow/agent-node
 # or
-pnpm add agent-node
+pnpm add @syncflow/agent-node
 ```
 
 ## Usage
 
 ```typescript
-import { SyncFlowAgent } from 'agent-node';
+import { SyncFlowAgent } from "@syncflow/agent-node";
 
 // Initialize the agent
 const agent = new SyncFlowAgent({
