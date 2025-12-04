@@ -1,5 +1,5 @@
 {
-  "name": "agent-node",
+  "name": "@syncflow/agent-node",
   "version": "0.1.0",
   "description": "SyncFlow agent for MERN stack - auto-captures Express and Mongoose events",
   "main": "dist/index.js",
