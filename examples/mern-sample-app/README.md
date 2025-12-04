@@ -8,19 +8,19 @@ Example application demonstrating SyncFlow agent integration with a MERN stack b
 
 - Express REST API with sample routes
 - Mongoose models and database operations
-- SyncFlow agent instrumentation
-- Auto-connects to dashboard on startup
+- SyncFlow agent integration (manual emits in routes for MVP)
+- Streams events to the dashboard in real time
 
 ## Setup
 
-1. Make sure MongoDB is running locally on port 27017
+1. Make sure MongoDB is running on port 27017 (local or Docker)
 2. Run the app:
 
 ```bash
 pnpm dev
 ```
 
-The server will start on http://localhost:3000 and automatically connect to the SyncFlow dashboard.
+The server will start on http://localhost:4000 and automatically connect to the SyncFlow dashboard.
 
 ## Testing
 
@@ -32,4 +32,4 @@ Try these API endpoints:
 - `PUT /api/users/:id` - Update user
 - `DELETE /api/users/:id` - Delete user
 
-Each operation will be captured and displayed in the SyncFlow dashboard.
+Each operation emits events to the SyncFlow dashboard (manual emits for MVP; auto-capture comes in Step 5).
