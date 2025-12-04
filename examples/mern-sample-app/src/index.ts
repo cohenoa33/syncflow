@@ -29,6 +29,10 @@ const agent = new SyncFlowAgent({
   projectId: "mern-sample-app",
 });
 
+agent.connect();
+agent.instrumentExpress(app);
+agent.instrumentMongoose(mongoose);
+
 // API Routes
 app.get("/", (_req, res) => {
   res.json({
