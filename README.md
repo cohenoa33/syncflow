@@ -19,39 +19,56 @@ syncflow/
 
 ### Prerequisites
 - Node.js 18+ and pnpm installed (`npm install -g pnpm`)
-- MongoDB running locally on port 27017
+- MongoDB running on port 27017  
+  - Either locally **or** via Docker (recommended)
 
-### Terminal 1: Install Dependencies
+### Terminal 1: Start MongoDB (Docker)
+If you haven't created the container yet:
 ```bash
-pnpm install
+docker run --name syncflow-mongo -p 27017:27017 -d mongo:7
+```
+If you already created it:
+```bash
+docker start syncflow-mongo
 ```
 
-### Terminal 2: Build Agent Package
+### Terminal 2: Start SyncFlow WebSocket Server
 ```bash
-cd packages/agent-node
-pnpm build
+cd packages/dashboard-web
+pnpm dev:server
 ```
-
-### Terminal 3: Start Dashboard
+- Socket.IO server: http://localhost:5050
+  
+### Terminal 3: Start SyncFlow Dashboard UI
 ```bash
 cd packages/dashboard-web
 pnpm dev
 ```
-- Socket.IO server: http://localhost:5050
+
 - Dashboard UI: http://localhost:5173
 
-### Terminal 4: Start Sample App
+### Terminal 4: Start Sample MERN App
 ```bash
 cd examples/mern-sample-app
 pnpm dev
 ```
-- Sample API: http://localhost:3000
+- Sample API: http://localhost:4000
 
-## 📖 How It Works
+Start Sample MERN App## 📖 How It Works (Current MVP)
 
-1. **Agent** (`packages/agent-node`): Install in your MERN app to auto-capture Express routes and Mongoose operations
-2. **Dashboard** (`packages/dashboard-web`): Real-time UI showing all events from instrumented apps
-3. **Socket.IO**: Connects agents to dashboard for live event streaming
+1. **Agent (packages/agent-node)**  
+   A lightweight Node/TypeScript library that you install into a MERN backend.  
+   Right now, the sample app manually calls `agent.emit(...)` inside routes to send events.
+
+2. **WebSocket Server (packages/dashboard-web/server)**  
+   A tiny Socket.IO server (port **5050**) that receives events from agents and broadcasts them to any open dashboards.
+
+3. **Dashboard UI (packages/dashboard-web)**  
+   A Vite React + Tailwind dashboard (port **5173**) that shows incoming events in real time.
+
+4. **Sample MERN App (examples/mern-sample-app)**  
+   A minimal Express + Mongoose backend using the agent, demonstrating live event streaming to the dashboard.
+
 
 ## 🛠️ Development Scripts
 
@@ -84,27 +101,27 @@ pnpm clean
 
 ## 🗺️ Roadmap
 
-### ✅ Phase 1: Core Infrastructure
+### ✅ Phase 1: Core Infrastructure (Current MVP)
 - [x] Monorepo setup with pnpm workspaces
 - [x] TypeScript agent package with Socket.IO client
 - [x] React dashboard with Tailwind CSS v4
 - [x] Socket.IO server on port 5050
-- [x] Express middleware auto-instrumentation
-- [x] Mongoose hooks for DB event capture
 - [x] Sample MERN app demonstrating integration
+- [x] Manual event emission showing live dashboard updates
 
-### 🚧 Phase 2: Enhanced Monitoring (In Progress)
+### 🚧 Phase 2: Enhanced Monitoring (Next)
+- [ ] Express middleware auto-instrumentation (auto capture routes + latency)
+- [ ] Mongoose hooks for DB event capture (auto capture writes/updates)
 - [ ] Error tracing across Express → Mongoose layers
 - [ ] Request/response payload inspection
 - [ ] Performance metrics and slow query detection
 - [ ] Custom event filtering and search
 - [ ] Event export (JSON, CSV)
-- [ ] Dark mode for dashboard
 
 ### 🔮 Phase 3: AI-Powered Features (Planned)
 - [ ] Automated test generation from captured events
 - [ ] AI-powered error analysis and suggestions
-- [ ] Performance bottleneck detection
+- [ ] Performance bottleneck detection + recommendations
 - [ ] Anomaly detection in request patterns
 - [ ] Code generation for fixing common issues
 - [ ] Integration with VS Code extension
@@ -113,7 +130,7 @@ pnpm clean
 - [ ] Authentication and multi-tenant support
 - [ ] Event persistence (database backend)
 - [ ] Distributed tracing for microservices
-- [ ] Metrics aggregation and historical analysis
+- [ ] Historical metrics dashboards
 - [ ] Alerting and notifications
 - [ ] Production-safe sampling and rate limiting
 
