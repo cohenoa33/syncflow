@@ -71,6 +71,8 @@ Start Sample MERN App## 📖 How It Works (Current MVP)
 
 
 ## 🛠️ Development Scripts
+> **Note:** `pnpm dev:all` uses `&` to run processes in parallel, which works on macOS/Linux.  
+> On Windows, run the terminals separately (as shown in Quick Start) or switch to a cross-platform runner like `concurrently`.
 
 From the root directory:
 
