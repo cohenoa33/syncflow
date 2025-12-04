@@ -19,6 +19,8 @@ pnpm add @syncflow/agent-node
 
 ## Usage
 
+Once instrumented, events are captured automatically — you don’t need to manually emit anything.
+
 ```typescript
 import { SyncFlowAgent } from "@syncflow/agent-node";
 

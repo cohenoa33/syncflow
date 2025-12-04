@@ -8,8 +8,8 @@ Example application demonstrating SyncFlow agent integration with a MERN stack b
 
 - Express REST API with sample routes
 - Mongoose models and database operations
-- SyncFlow agent integration (manual emits in routes for MVP)
-- Streams events to the dashboard in real time
+- SyncFlow agent auto-instrumentation for Express + Mongoose
+- Streams events to the dashboard on startup (no manual emits)
 
 ## Setup
 

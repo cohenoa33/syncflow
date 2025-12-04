@@ -19,10 +19,12 @@
   "author": "Noa Rabin Cohen",
   "license": "MIT",
   "dependencies": {
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.7.2",
+    "uuid": "8.3.2"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
+    "@types/uuid": "^8.3.4",
     "typescript": "^5.3.3"
   },
   "peerDependencies": {

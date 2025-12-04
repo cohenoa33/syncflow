@@ -1,3 +1,5 @@
+// examples/mern-sample-app/src/index.ts
+
 import express from "express";
 import mongoose from "mongoose";
 import { SyncFlowAgent } from "@syncflow/agent-node";
@@ -18,15 +20,15 @@ mongoose
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  createdAt: { type: Date, default: Date.now },
+  createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model("User", userSchema);
 
-// ✅ Current MVP agent API
+// ✅ Copilot/Step-5 agent API (auto instrumentation)
 const agent = new SyncFlowAgent({
-  serverUrl: "http://localhost:5050",
-  projectId: "mern-sample-app",
+  dashboardUrl: "http://localhost:5050",
+  appName: "mern-sample-app"
 });
 
 agent.connect();
@@ -38,52 +40,70 @@ app.get("/", (_req, res) => {
   res.json({
     message: "SyncFlow MERN Sample App",
     status: "running",
+    endpoints: [
+      "GET /api/users",
+      "POST /api/users",
+      "GET /api/users/:id",
+      "PUT /api/users/:id",
+      "DELETE /api/users/:id"
+    ]
   });
 });
 
 // Get all users
 app.get("/api/users", async (_req, res) => {
-  const users = await User.find();
-  agent.emit("route_hit", { route: "/api/users", count: users.length });
-  res.json(users);
+  try {
+    const users = await User.find();
+    res.json(users);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Create user
 app.post("/api/users", async (req, res) => {
   try {
-    const user = await User.create(req.body);
-    agent.emit("user_created", { id: user._id, email: user.email });
+    const user = new User(req.body);
+    await user.save();
     res.status(201).json(user);
   } catch (error: any) {
-    agent.emit("user_create_error", { message: error.message });
     res.status(400).json({ error: error.message });
   }
 });
 
 // Get user by ID
 app.get("/api/users/:id", async (req, res) => {
-  const user = await User.findById(req.params.id);
-  agent.emit("route_hit", { route: "/api/users/:id", id: req.params.id });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(user);
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Update user
 app.put("/api/users/:id", async (req, res) => {
-  const user = await User.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-  });
-  agent.emit("user_updated", { id: req.params.id });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(user);
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, req.body, {
+      new: true
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // Delete user
 app.delete("/api/users/:id", async (req, res) => {
-  const user = await User.findByIdAndDelete(req.params.id);
-  agent.emit("user_deleted", { id: req.params.id });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json({ message: "User deleted successfully" });
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ message: "User deleted successfully" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Start server

@@ -54,11 +54,15 @@ pnpm dev
 ```
 - Sample API: http://localhost:4000
 
-Start Sample MERN App## 📖 How It Works (Current MVP)
+
+## 📖 How It Works (Current MVP)
 
 1. **Agent (packages/agent-node)**  
-   A lightweight Node/TypeScript library that you install into a MERN backend.  
-   Right now, the sample app manually calls `agent.emit(...)` inside routes to send events.
+   Install `@syncflow/agent-node` in a MERN backend, initialize it once, then call:
+   - `agent.connect()` to stream events to the dashboard
+   - `agent.instrumentExpress(app)` to auto-capture request/response + latency
+   - `agent.instrumentMongoose(mongoose)` to auto-capture DB operations  
+   No manual `emit()` calls are required.
 
 2. **WebSocket Server (packages/dashboard-web/server)**  
    A tiny Socket.IO server (port **5050**) that receives events from agents and broadcasts them to any open dashboards.
@@ -67,7 +71,7 @@ Start Sample MERN App## 📖 How It Works (Current MVP)
    A Vite React + Tailwind dashboard (port **5173**) that shows incoming events in real time.
 
 4. **Sample MERN App (examples/mern-sample-app)**  
-   A minimal Express + Mongoose backend using the agent, demonstrating live event streaming to the dashboard.
+   A minimal Express + Mongoose backend using the agent to demonstrate automatic event streaming.
 
 
 ## 🛠️ Development Scripts
@@ -110,10 +114,10 @@ pnpm clean
 - [x] Socket.IO server on port 5050
 - [x] Sample MERN app demonstrating integration
 - [x] Manual event emission showing live dashboard updates
+- [x] Express middleware auto-instrumentation (auto capture routes + latency)
+- [x] Mongoose hooks for DB event capture (auto capture writes/updates)
 
 ### 🚧 Phase 2: Enhanced Monitoring (Next)
-- [ ] Express middleware auto-instrumentation (auto capture routes + latency)
-- [ ] Mongoose hooks for DB event capture (auto capture writes/updates)
 - [ ] Error tracing across Express → Mongoose layers
 - [ ] Request/response payload inspection
 - [ ] Performance metrics and slow query detection
