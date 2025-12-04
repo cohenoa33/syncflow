@@ -39,3 +39,13 @@ coverage/
 .cache/
 tmp/
 temp/
+
+# Python / Brain
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
