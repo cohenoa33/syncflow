@@ -3,8 +3,6 @@ import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [
-    react(),
-    tailwind() // Tailwind v4 Vite plugin
-  ]
+  plugins: [react(), tailwind()],
+  server: { port: 5173 },
 });

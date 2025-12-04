@@ -1,17 +1,37 @@
 {
   "name": "syncflow",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "examples/*"
+  "description": "SyncFlow - AI-powered full-stack dev assistant for MERN apps",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./packages/**\" --filter \"./examples/**\" dev",
+    "dev:agent": "pnpm --filter agent-node dev",
+    "dev:dashboard": "pnpm --filter dashboard-web dev",
+    "dev:server": "pnpm --filter dashboard-web dev:server",
+    "dev:example": "pnpm --filter mern-sample-app dev",
+
+    "dev:all": "pnpm dev & pnpm dev:server",
+
+    "build": "pnpm --filter \"./packages/**\" build",
+    "build:agent": "pnpm --filter agent-node build",
+    "build:dashboard": "pnpm --filter dashboard-web build",
+
+    "typecheck": "pnpm -r exec tsc --noEmit",
+
+    "clean": "rm -rf node_modules packages/**/node_modules examples/**/node_modules packages/**/dist examples/**/dist",
+
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\""
+  },
+  "keywords": [
+    "mern",
+    "monitoring",
+    "debugging",
+    "developer-tools",
+    "socket.io"
   ],
-"scripts": {
-  "dev:dashboard": "pnpm --filter dashboard-web dev",
-  "dev:agent": "pnpm --filter agent-node dev",
-  "dev:brain": "pnpm --filter brain-py dev",
-  "dev:all": "pnpm -r dev"
-},
-  "license": "ISC",
-  "packageManager": "pnpm@10.24.0"
+  "author": "Noa Rabin Cohen",
+  "license": "MIT",
+  "devDependencies": {
+    "prettier": "^3.1.1"
+  }
 }

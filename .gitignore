@@ -1,71 +1,51 @@
-# ----------------------------
-# General
-# ----------------------------
-.DS_Store
-*.log
-logs
-tmp
-temp
-*.tmp
-*.swp
-*.swo
-*.bak
-*.orig
-
-# ----------------------------
-# Node / pnpm / JS
-# ----------------------------
+# Dependencies
 node_modules/
 .pnpm-store/
+
+# Build outputs
 dist/
 build/
-coverage/
-*.tsbuildinfo
+.turbo/
 
-# Env files
+# Environment variables
 .env
 .env.local
 .env.*.local
 
-# ----------------------------
-# Vite / React / Tailwind
-# ----------------------------
-packages/dashboard-web/node_modules/
-packages/dashboard-web/dist/
-packages/dashboard-web/.vite/
-packages/dashboard-web/.cache/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# ----------------------------
-# Python
-# ----------------------------
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.cache/
+tmp/
+temp/
+
+# Python / Brain
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg
-*.egg-info/
-.eggs/
-.mypy_cache/
-.pytest_cache/
 .venv/
 venv/
 ENV/
 env/
-pip-wheel-metadata/
-*.sqlite3
-
-# Jupyter / notebooks (if you ever use them)
-.ipynb_checkpoints/
-
-# ----------------------------
-# IDEs / editors
-# ----------------------------
-.vscode/
-.idea/
-*.iml
-
-# ----------------------------
-# OS / misc
-# ----------------------------
-Thumbs.db
+.pytest_cache/
+.mypy_cache/
