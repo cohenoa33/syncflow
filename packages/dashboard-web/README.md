@@ -27,6 +27,9 @@ pnpm build
 ## Architecture
 
 - **Frontend**: React + TypeScript + Tailwind CSS v4 (port 5173)
+  Dashboard UI: http://localhost:5173
 - **Backend**: Express + Socket.IO server (port 5050)
+  Socket.IO server: http://localhost:5050  
+
 
 The Socket.IO server receives events from agent-instrumented applications and broadcasts them to connected dashboard clients.
