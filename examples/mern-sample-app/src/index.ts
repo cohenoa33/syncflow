@@ -16,15 +16,6 @@ mongoose
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Define User model
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const User = mongoose.model("User", userSchema);
-
 // ✅ Copilot/Step-5 agent API (auto instrumentation)
 const agent = new SyncFlowAgent({
   dashboardUrl: "http://localhost:5050",
@@ -32,9 +23,21 @@ const agent = new SyncFlowAgent({
 });
 
 agent.connect();
-agent.instrumentExpress(app);
 agent.instrumentMongoose(mongoose);
 
+agent.connect();
+agent.instrumentExpress(app);
+
+// ✅ IMPORTANT: instrument mongoose BEFORE defining models
+agent.instrumentMongoose(mongoose);
+
+// Define User model (now hooks will attach)
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const User = mongoose.model("User", userSchema);
 // API Routes
 app.get("/", (_req, res) => {
   res.json({

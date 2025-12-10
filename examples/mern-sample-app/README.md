@@ -3,7 +3,7 @@
 Example application demonstrating SyncFlow agent integration with a MERN stack backend.
 
 > **Note**: This is a development/demo application. It does not include production features like rate limiting, authentication, or input validation. Do not use in production without proper security measures.
-
+> ***Note***: `agent.instrumentMongoose(mongoose)` must run **before** defining Mongoose models, otherwise hooks won't attach.
 ## Features
 
 - Express REST API with sample routes
@@ -32,4 +32,6 @@ Try these API endpoints:
 - `PUT /api/users/:id` - Update user
 - `DELETE /api/users/:id` - Delete user
 
+
 Each operation emits events to the SyncFlow dashboard (manual emits for MVP; auto-capture comes in Step 5).
+

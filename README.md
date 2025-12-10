@@ -64,6 +64,9 @@ pnpm dev
    - `agent.instrumentMongoose(mongoose)` to auto-capture DB operations  
    No manual `emit()` calls are required.
 
+   - Events are labeled `info` by default and upgrade to `warn` if duration exceeds the agent’s `slowMsThreshold` (default 500ms).
+
+
 2. **WebSocket Server (packages/dashboard-web/server)**  
    A tiny Socket.IO server (port **5050**) that receives events from agents and broadcasts them to any open dashboards.
 
@@ -116,6 +119,11 @@ pnpm clean
 - [x] Manual event emission showing live dashboard updates
 - [x] Express middleware auto-instrumentation (auto capture routes + latency)
 - [x] Mongoose hooks for DB event capture (auto capture writes/updates)
+<<<<<<< HEAD
+=======
+- [x] Rich event payloads (request/response details + DB context)
+- [x] Event levels (info/warn/error) with sanitization
+>>>>>>> c71ddbf (Add rich Express/Mongoose events, sanitize payloads, improve dashboard UX, and update docs)
 
 ### 🚧 Phase 2: Enhanced Monitoring (Next)
 - [ ] Error tracing across Express → Mongoose layers
