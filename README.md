@@ -19,8 +19,13 @@ syncflow/
 
 ### Prerequisites
 - Node.js 18+ and pnpm installed (`npm install -g pnpm`)
-- MongoDB running on port 27017  
-  - Either locally **or** via Docker (recommended)
+- **MongoDB running locally** on port `27017`
+  - Dashboard DB: `syncflow-dashboard`
+  - Sample app DB: `syncflow-demo`
+
+### Terminal 1: Install Dependencies
+```bash
+pnpm install
 
 ### Terminal 1: Start MongoDB (Docker)
 If you haven't created the container yet:
@@ -34,6 +39,7 @@ docker start syncflow-mongo
 
 ### Terminal 2: Start SyncFlow WebSocket Server
 ```bash
+pnpm -C packages/agent-node build
 cd packages/dashboard-web
 pnpm dev:server
 ```
@@ -41,19 +47,36 @@ pnpm dev:server
   
 ### Terminal 3: Start SyncFlow Dashboard UI
 ```bash
+pnpm -C packages/dashboard-web dev
 cd packages/dashboard-web
 pnpm dev
 ```
 
+#### Ports
 - Dashboard UI: http://localhost:5173
+- Socket/API server: http://localhost:5050
+- Persisted traces API: http://localhost:5050/api/traces
+
 
 ### Terminal 4: Start Sample MERN App
 ```bash
+pnpm -C examples/mern-sample-app dev
 cd examples/mern-sample-app
 pnpm dev
 ```
+#### Port
 - Sample API: http://localhost:4000
 
+#### Trigger events: 
+```bash 
+curl -X POST http://localhost:4000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"[NAME]","email":"[NAME]+'$(date +%s)'@test.com"}'
+
+curl http://localhost:4000/api/users
+```
+
+Open the dashboard and you’ll see live traces + DB operations.
 
 ## 📖 How It Works (Current MVP)
 
@@ -108,32 +131,47 @@ pnpm clean
 - [Dashboard Web](./packages/dashboard-web/README.md) - React dashboard + Socket.IO server
 - [MERN Sample App](./examples/mern-sample-app/README.md) - Demo backend
 
+# ✅ What’s Implemented (so far)
+
+### Agent
+- Auto-instruments Express requests
+- Auto-instruments Mongoose ops via global plugin
+- Rich payloads: request/response + DB context
+- Event levels (`info` / `warn` / `error`)
+- Automatic sanitization of sensitive fields
+- **Trace correlation** across Express → Mongoose using `traceId`
+
+### Dashboard
+- React + Tailwind UI (Vite)
+- Live event stream via Socket.IO
+- **Trace grouping** (collapsible request timelines)
+- Status / slow / error badges per trace
+- Search + filters (Slow only / Errors only)
+- Export filtered traces to JSON
+- **Mongo persistence** of events + REST API
+
 ## 🗺️ Roadmap
 
-### ✅ Phase 1: Core Infrastructure (Current MVP)
+### ✅ Phase 1: Core Infrastructure
 - [x] Monorepo setup with pnpm workspaces
 - [x] TypeScript agent package with Socket.IO client
-- [x] React dashboard with Tailwind CSS v4
+- [x] React dashboard (Vite + TS + Tailwind v4)
 - [x] Socket.IO server on port 5050
+- [x] Express auto-instrumentation
+- [x] Mongoose hooks for DB event capture
 - [x] Sample MERN app demonstrating integration
-- [x] Manual event emission showing live dashboard updates
-- [x] Express middleware auto-instrumentation (auto capture routes + latency)
-- [x] Mongoose hooks for DB event capture (auto capture writes/updates)
-<<<<<<< HEAD
-=======
-- [x] Rich event payloads (request/response details + DB context)
-- [x] Event levels (info/warn/error) with sanitization
->>>>>>> c71ddbf (Add rich Express/Mongoose events, sanitize payloads, improve dashboard UX, and update docs)
 
-### 🚧 Phase 2: Enhanced Monitoring (Next)
-- [ ] Error tracing across Express → Mongoose layers
-- [ ] Request/response payload inspection
-- [ ] Performance metrics and slow query detection
-- [ ] Custom event filtering and search
-- [ ] Event export (JSON, CSV)
+### ✅ Phase 2: Enhanced Monitoring
+- [x] Rich request/response + DB payloads
+- [x] Event levels + slow request detection
+- [x] Trace correlation (traceId)
+- [x] Trace grouping UI
+- [x] Search / filters
+- [x] Export JSON
+- [x] Trace persistence (MongoDB)
 
 ### 🔮 Phase 3: AI-Powered Features (Planned)
-- [ ] Automated test generation from captured events
+- [ ] Automated test generation from captured traces
 - [ ] AI-powered error analysis and suggestions
 - [ ] Performance bottleneck detection + recommendations
 - [ ] Anomaly detection in request patterns
@@ -142,11 +180,11 @@ pnpm clean
 
 ### 🎯 Phase 4: Production Ready (Future)
 - [ ] Authentication and multi-tenant support
-- [ ] Event persistence (database backend)
 - [ ] Distributed tracing for microservices
 - [ ] Historical metrics dashboards
 - [ ] Alerting and notifications
 - [ ] Production-safe sampling and rate limiting
+
 
 ## 🤝 Contributing
 

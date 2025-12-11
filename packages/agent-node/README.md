@@ -1,13 +1,23 @@
 # @syncflow/agent-node
 
-TypeScript agent for MERN stack applications. Automatically captures Express route events and Mongoose database operations, streaming them via Socket.IO to the SyncFlow dashboard.
+TypeScript agent for MERN stack applications.  
+SyncFlow Agent automatically instruments **Express** requests and **Mongoose** operations, then streams rich, sanitized, trace-correlated events to the SyncFlow Dashboard via Socket.IO.
+
+---
 
 ## Features
 
-- 🚀 Auto-capture Express middleware and route handlers
-- 📊 Track Mongoose model operations (find, create, update, delete)
-- 🔌 Real-time event streaming via Socket.IO
-- 🎯 Minimal setup - just initialize and connect
+- 🚀 Auto-capture Express requests (method, route, status, latency)
+- 📊 Auto-capture Mongoose operations (read/write hooks)
+- 🧠 Rich payloads:
+  - Express: request + response context
+  - Mongoose: model, collection, kind, docId, shapes (best-effort)
+- 🔒 Built-in sanitization for sensitive fields (passwords, tokens, cookies, auth headers)
+- ⚠️ Event levels: `info` / `warn` / `error` with slow request detection
+- 🧵 Trace correlation: Express → Mongoose events share the same `traceId`
+- 🔌 Real-time streaming to the dashboard (Socket.IO)
+
+---
 
 ## Installation
 
@@ -18,80 +28,87 @@ pnpm add @syncflow/agent-node
 ```
 
 ## Usage
-
 Once instrumented, events are captured automatically — you don’t need to manually emit anything.
-
-```typescript
+```ts
+import express from "express";
+import mongoose from "mongoose";
 import { SyncFlowAgent } from "@syncflow/agent-node";
 
-// Initialize the agent
+const app = express();
+app.use(express.json());
+
 const agent = new SyncFlowAgent({
-  dashboardUrl: 'http://localhost:5050',
-  appName: 'my-mern-app'
+  dashboardUrl: "http://localhost:5050",
+  appName: "my-mern-app",
+  slowMsThreshold: 500, // optional
 });
 
-// Connect to dashboard
 agent.connect();
 
-// Instrument your Express app
+// ✅ Express can be instrumented anytime
 agent.instrumentExpress(app);
 
-// Instrument Mongoose models
+// ✅ IMPORTANT: instrument mongoose BEFORE defining models
 agent.instrumentMongoose(mongoose);
+
+// define your mongoose models AFTER this line
 ```
-## Payload & Sanitization (Step 6)
 
-SyncFlow now captures richer, production-useful context automatically:
+***Why order matters for Mongoose***
 
-### Express events include
-- Route operation (e.g. `GET /api/users`)
-- Latency (`durationMs`)
-- Request details: `params`, `query`, `body`, `headers`, `ip`, `userAgent`
-- Response details: `statusCode`, `ok`, `contentLength`
-- Event level: `info` (default) or `warn` when slow
-
-### Mongoose events include
-- Model + collection name
-- Operation (e.g. `save User`, `find User`)
-- Operation kind (`read` / `write`)
-- Query filter and update shape (best-effort)
-- Document id when available
-- Event level: `info` / `warn` / `error`
-
-### Sanitization
-Sensitive fields are automatically redacted in request bodies, headers, and DB shapes.
-Common keys redacted include:
-`password`, `token`, `authorization`, cookies, and API keys.
-
-You don’t need to manually emit events — once instrumented, everything streams to the dashboard.
+instrumentMongoose() installs a global plugin.
+If you define models before calling it, hooks won’t attach to those schemas.
 
 ## API
 
-### `new SyncFlowAgent(options)`
+***new SyncFlowAgent(options)***
 
 Creates a new agent instance.
 
 **Options:**
-- `dashboardUrl` (string): URL of the SyncFlow dashboard (default: 'http://localhost:5050')
-- `appName` (string): Name of your application (default: 'unnamed-app')
-- `slowMsThreshold` (number, optional): marks events as `warn` if duration exceeds this threshold in ms (default: 500)
+- dashboardUrl (string): URL of the SyncFlow dashboard Socket.IO server
+Default: http://localhost:5050
+- appName (string): Name shown in the dashboard
+Default: unnamed-app
+- slowMsThreshold (number, optional): Marks events as warn
+if duration exceeds this threshold (ms).
+Default: 500
 
-### `agent.connect()`
+***agent.connect()***
 
-Connects to the dashboard via Socket.IO.
+Connects to the dashboard via Socket.IO and registers the application.
 
-### `agent.instrumentExpress(app)`
+***agent.instrumentExpress(app)***
 
-Instruments an Express application to capture route events.
+Adds middleware to capture all HTTP requests and responses.
 
-### `agent.instrumentMongoose(mongoose)`
+***agent.instrumentMongoose(mongoose)***
 
-Instruments Mongoose to capture database operations.
+Installs a global plugin to capture DB operations across all schemas/models.
 
-### `agent.disconnect()`
+***agent.disconnect()***
 
 Disconnects from the dashboard.
 
-## License
+## Payload, Levels & Traces
+***Express events include***
+- operation: e.g. POST /api/users
+- durationMs, level
+- Request: params, query, body, headers (sanitized), ip, userAgent
+- Response: statusCode, ok, contentLength
 
+***Mongoose events include***
+- operation: e.g. save User
+- Model + collection
+- kind: read / write
+- durationMs, level
+- Filter/update shapes (best-effort) + docId when available
+
+***Trace correlation***
+
+Each Express request gets a unique traceId.
+All Mongoose ops triggered during that request emit with the same traceId, letting the dashboard render a full request timeline.
+
+
+## License
 MIT

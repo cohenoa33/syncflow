@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
-
+import { AsyncLocalStorage } from "node:async_hooks";
 export interface SyncFlowAgentOptions {
   dashboardUrl?: string;
   appName?: string;
@@ -18,7 +18,7 @@ export interface SyncFlowEvent {
   operation: string;
   ts: number;
   durationMs?: number;
-  traceId?: string; // populated in Step 7
+  traceId?: string; 
   level: SyncFlowEventLevel;
   payload: Record<string, any>;
 }
@@ -127,6 +127,12 @@ export class SyncFlowAgent {
   private appName: string;
   private connected = false;
   private slowMsThreshold: number;
+  
+  private als = new AsyncLocalStorage<{ traceId: string }>();
+
+  private currentTraceId(): string | undefined {
+    return this.als.getStore()?.traceId;
+  }
 
   constructor(options: SyncFlowAgentOptions = {}) {
     this.dashboardUrl = options.dashboardUrl || "http://localhost:5050";
@@ -170,14 +176,26 @@ export class SyncFlowAgent {
     }
   }
 
-  private emitEvent(event: Omit<SyncFlowEvent, "id" | "appName">): void {
+  private emitEvent(
+    event: Omit<SyncFlowEvent, "id" | "appName" | "traceId"> & {
+      traceId?: string;
+    }
+  ): void {
     if (!this.socket || !this.connected) return;
 
     const fullEvent: SyncFlowEvent = {
       id: uuidv4(),
       appName: this.appName,
+    traceId: event.traceId ?? this.currentTraceId(),
       ...event
     };
+
+    console.log(
+      "[SyncFlow emit]",
+      fullEvent.type,
+      fullEvent.operation,
+      fullEvent.traceId
+    );
 
     this.socket.emit("event", fullEvent);
   }
@@ -191,63 +209,66 @@ export class SyncFlowAgent {
       return;
     }
 
-    app.use((req: any, res: any, next: any) => {
-      const start = Date.now();
-      const originalSend = res.send;
-      const agent = this;
+ app.use((req: any, res: any, next: any) => {
+   const traceId = uuidv4();
 
-      // capture response size if possible
-      let responseSize: number | undefined;
+   this.als.run({ traceId }, () => {
+     const start = Date.now();
+     const originalSend = res.send;
+     const agent = this;
 
-      res.send = function (this: any, body: any) {
-        const durationMs = Date.now() - start;
-        res.send = originalSend;
+     let responseSize: number | undefined;
 
-        try {
-          if (body != null) {
-            const asString =
-              typeof body === "string" ? body : JSON.stringify(body);
-            responseSize = asString.length;
-          }
-        } catch {
-          responseSize = undefined;
-        }
+     res.send = function (this: any, body: any) {
+       const durationMs = Date.now() - start;
+       res.send = originalSend;
 
-        const result = originalSend.call(this, body);
+       try {
+         if (body != null) {
+           const asString =
+             typeof body === "string" ? body : JSON.stringify(body);
+           responseSize = asString.length;
+         }
+       } catch {
+         responseSize = undefined;
+       }
 
-        const level: SyncFlowEventLevel =
-          durationMs >= agent.slowMsThreshold ? "warn" : "info";
+       const result = originalSend.call(this, body);
 
-        agent.emitEvent({
-          type: "express",
-          operation: `${req.method} ${req.path}`,
-          ts: start,
-          durationMs,
-          level,
-          payload: {
-            request: {
-              method: req.method,
-              path: req.path,
-              params: sanitize(req.params),
-              query: sanitize(req.query),
-              body: sanitize(req.body),
-              headers: sanitize(req.headers),
-              ip: req.ip,
-              userAgent: req.headers?.["user-agent"]
-            },
-            response: {
-              statusCode: res.statusCode,
-              ok: res.statusCode < 400,
-              contentLength: responseSize
-            }
-          }
-        });
+       const level = durationMs >= agent.slowMsThreshold ? "warn" : "info";
 
-        return result;
-      };
+       agent.emitEvent({
+         type: "express",
+         operation: `${req.method} ${req.path}`,
+         ts: start,
+         durationMs,
+         level,
+         traceId: agent.currentTraceId(),
+         payload: {
+           request: {
+             method: req.method,
+             path: req.path,
+             params: sanitize(req.params),
+             query: sanitize(req.query),
+             body: sanitize(req.body),
+             headers: sanitize(req.headers),
+             ip: req.ip,
+             userAgent: req.headers?.["user-agent"]
+           },
+           response: {
+             statusCode: res.statusCode,
+             ok: res.statusCode < 400,
+             contentLength: responseSize
+           }
+         }
+       });
 
-      next();
-    });
+       return result;
+     };
+
+     next();
+   });
+ });
 
     console.log("[SyncFlow] Express instrumentation enabled");
   }
@@ -307,6 +328,7 @@ export class SyncFlowAgent {
             ts: start,
             durationMs,
             level,
+            traceId: agent.currentTraceId(),
             payload: {
               modelName,
               collection,

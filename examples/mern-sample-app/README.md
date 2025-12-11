@@ -4,6 +4,8 @@ Example application demonstrating SyncFlow agent integration with a MERN stack b
 
 > **Note**: This is a development/demo application. It does not include production features like rate limiting, authentication, or input validation. Do not use in production without proper security measures.
 > ***Note***: `agent.instrumentMongoose(mongoose)` must run **before** defining Mongoose models, otherwise hooks won't attach.
+> Note: the sample app runs on port **4000**.
+
 ## Features
 
 - Express REST API with sample routes
@@ -20,7 +22,8 @@ Example application demonstrating SyncFlow agent integration with a MERN stack b
 pnpm dev
 ```
 
-The server will start on http://localhost:4000 and automatically connect to the SyncFlow dashboard.
+
+> Important: `agent.instrumentMongoose(mongoose)` must run **before** defining models so hooks attach correctly.
 
 ## Testing
 

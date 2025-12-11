@@ -19,7 +19,22 @@ interface Agent {
   socketId: string;
 }
 
-function App() {
+type TraceGroup = {
+  traceId: string; // "no-trace:<eventId>" for untraced events
+  displayTraceId?: string; // undefined for no-trace groups
+  events: Event[];
+  headerOp: string;
+  appName: string;
+  startedAt: number;
+  totalDurationMs?: number;
+  hasExpress: boolean;
+  statusCode?: number;
+  ok?: boolean;
+  slow?: boolean;
+  hasError?: boolean;
+};
+
+export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -27,47 +42,179 @@ function App() {
     "all" | "express" | "mongoose" | "error"
   >("all");
 
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const [traceOpenMap, setTraceOpenMap] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+const [query, setQuery] = useState("");
+const [showSlowOnly, setShowSlowOnly] = useState(false);
+const [showErrorsOnly, setShowErrorsOnly] = useState(false);
   useEffect(() => {
+
+    // 1) Load persisted events first (so refresh shows history)
+    (async () => {
+      try {
+        setLoadingHistory(true);
+
+        const res = await fetch("http://localhost:5050/api/traces");
+        const data: Event[] = await res.json();
+
+        const ordered = [...data].sort((a, b) => a.ts - b.ts);
+        setEvents(ordered);
+
+        const initialOpen: Record<string, boolean> = {};
+        const initialTraceOpen: Record<string, boolean> = {};
+        for (const e of ordered) {
+          initialOpen[e.id] = false;
+          const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
+          if (!(key in initialTraceOpen)) initialTraceOpen[key] = true;
+        }
+        setOpenMap(initialOpen);
+        setTraceOpenMap(initialTraceOpen);
+      } catch (err) {
+        console.error("[Dashboard] failed to load traces", err);
+      } finally {
+        setLoadingHistory(false);
+      }
+    })();
+
+
+    // 2) Then attach live socket
     const socket = io("http://localhost:5050");
 
     socket.on("connect", () => {
       setConnected(true);
+      // optional: still ask for in-memory events (won’t hurt)
       socket.emit("getEvents");
     });
 
-    socket.on("disconnect", () => {
-      setConnected(false);
-    });
+    socket.on("disconnect", () => setConnected(false));
 
     socket.on("event", (event: Event) => {
-      setEvents((prev) => [event, ...prev].slice(0, 1000));
+      setEvents((prev) => [...prev, event].slice(-1000));
       setOpenMap((m) => ({ ...m, [event.id]: false }));
+
+      const key = event.traceId ? event.traceId : `no-trace:${event.id}`;
+      setTraceOpenMap((m) => (key in m ? m : { ...m, [key]: true }));
     });
 
     socket.on("eventHistory", (history: Event[]) => {
-      const reversed = history.reverse();
-      setEvents(reversed);
-      const initialOpen: Record<string, boolean> = {};
-      for (const e of reversed) initialOpen[e.id] = false;
-      setOpenMap(initialOpen);
+      // keep whichever is larger: DB history or memory history
+      setEvents((prev) => {
+        const merged = [...prev, ...history];
+        const dedup = new Map<string, Event>();
+        for (const e of merged) dedup.set(e.id, e);
+        return [...dedup.values()].sort((a, b) => a.ts - b.ts).slice(-1000);
+      });
     });
 
-    socket.on("agents", (agentList: Agent[]) => {
-      setAgents(agentList);
-    });
+    socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
-    return () => {
-      socket.close();
-    };
+    return () => {socket.close()};
   }, []);
-
   const filteredEvents = useMemo(
     () => events.filter((e) => filter === "all" || e.type === filter),
     [events, filter]
   );
+
+  const traceGroups: TraceGroup[] = useMemo(() => {
+    const map = new Map<string, Event[]>();
+
+    for (const e of filteredEvents) {
+      const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(e);
+    }
+
+    const groups: TraceGroup[] = [];
+
+    for (const [traceId, evs] of map.entries()) {
+      // Order within trace oldest → newest
+      const ordered = [...evs].sort((a, b) => a.ts - b.ts);
+
+      const expressEvt = ordered.find((x) => x.type === "express");
+      const statusCode =
+        expressEvt?.payload?.response?.statusCode ??
+        expressEvt?.payload?.response?.status ??
+        undefined;
+
+      const ok =
+        expressEvt?.payload?.response?.ok ??
+        (typeof statusCode === "number" ? statusCode < 400 : undefined);
+
+      const hasError = ordered.some(
+        (e) => e.level === "error" || e.type === "error"
+      );
+
+      const slow =
+        typeof expressEvt?.durationMs === "number"
+          ? expressEvt!.durationMs > 500
+          : ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0) > 800;
+      const headerOp =
+        expressEvt?.operation ?? ordered[0]?.operation ?? "Trace";
+      const appName = expressEvt?.appName ?? ordered[0]?.appName ?? "app";
+      const startedAt = ordered[0]?.ts ?? Date.now();
+      const hasExpress = !!expressEvt;
+
+      // best-effort total duration:
+      const totalDurationMs =
+        (expressEvt?.durationMs ??
+          ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0)) ||
+        undefined;
+
+      groups.push({
+        traceId,
+        displayTraceId: traceId.startsWith("no-trace:") ? undefined : traceId,
+        events: ordered,
+        headerOp,
+        appName,
+        startedAt,
+        totalDurationMs,
+        hasExpress,
+        statusCode,
+        ok,
+        hasError,
+        slow
+      });
+    }
+
+    // Sort traces newest first by start time
+    groups.sort((a, b) => b.startedAt - a.startedAt);
+    return groups;
+  }, [filteredEvents]);
+const filteredTraceGroups = useMemo(() => {
+  const q = query.trim().toLowerCase();
+
+  return traceGroups.filter((g) => {
+    if (showSlowOnly && !g.slow) return false;
+    if (showErrorsOnly && !g.hasError) return false;
+
+    if (!q) return true;
+
+    // match route/app
+    if (g.headerOp.toLowerCase().includes(q)) return true;
+    if (g.appName.toLowerCase().includes(q)) return true;
+
+    // match any event operation
+    if (g.events.some((e) => e.operation.toLowerCase().includes(q)))
+      return true;
+
+    // match payload (best-effort, avoid heavy stringify)
+    try {
+      const sample = g.events
+        .slice(0, 4)
+        .map((e) => JSON.stringify(e.payload ?? {}))
+        .join(" ");
+      if (sample.toLowerCase().includes(q)) return true;
+    } catch {
+      /* ignore */
+    }
+
+    return false;
+  });
+}, [traceGroups, query, showSlowOnly, showErrorsOnly]);
+
 
   const getTypeBadgeClasses = (type: Event["type"]) =>
     type === "express"
@@ -83,8 +230,12 @@ function App() {
         ? "bg-amber-100 text-amber-800"
         : "bg-rose-100 text-rose-800";
 
+  // Helpers: 
   const toggleOpen = (id: string) =>
     setOpenMap((m) => ({ ...m, [id]: !m[id] }));
+
+  const toggleTrace = (traceId: string) =>
+    setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
 
   const copyPayload = async (event: Event) => {
     try {
@@ -99,51 +250,86 @@ function App() {
       alert("Copy failed. Your browser may block clipboard access.");
     }
   };
-  const expandAll = () =>
+
+  // Expand/collapse all event payloads in visible traces
+  const expandAllPayloads = () =>
     setOpenMap((m) => {
       const next: Record<string, boolean> = {};
-      for (const e of filteredEvents) next[e.id] = true;
+      for (const g of traceGroups) for (const e of g.events) next[e.id] = true;
       return { ...m, ...next };
     });
 
-  const collapseAll = () =>
+  const collapseAllPayloads = () =>
     setOpenMap((m) => {
       const next: Record<string, boolean> = {};
-      for (const e of filteredEvents) next[e.id] = false;
+      for (const g of traceGroups) for (const e of g.events) next[e.id] = false;
       return { ...m, ...next };
     });
 
-  const allFilteredExpanded =
-    filteredEvents.length > 0 && filteredEvents.every((e) => openMap[e.id]);
+  const anyPayloadClosed = traceGroups.some((g) =>
+    g.events.some((e) => !openMap[e.id])
+  );
 
-    useEffect(() => {
-      const onKeyDown = (ev: KeyboardEvent) => {
-        const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
-        if (
-          tag === "input" ||
-          tag === "textarea" ||
-          (ev.target as HTMLElement)?.isContentEditable
-        ) {
-          return;
-        }
+  const exportTracesJson = () => {
+    const exportPayload = filteredTraceGroups.map((g) => ({
+      traceId: g.displayTraceId ?? g.traceId,
+      headerOp: g.headerOp,
+      appName: g.appName,
+      startedAt: g.startedAt,
+      totalDurationMs: g.totalDurationMs,
+      statusCode: g.statusCode,
+      ok: g.ok,
+      slow: g.slow,
+      hasError: g.hasError,
+      events: g.events
+    }));
 
-        if (ev.key === "e" && !ev.shiftKey) {
-          const latest = filteredEvents[0];
-          if (!latest) return;
-          toggleOpen(latest.id);
-          ev.preventDefault();
-        }
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+      type: "application/json"
+    });
 
-        if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
-          if (allFilteredExpanded) collapseAll();
-          else expandAll();
-          ev.preventDefault();
-        }
-      };
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const now = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `syncflow-traces-${now}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
-      window.addEventListener("keydown", onKeyDown);
-      return () => window.removeEventListener("keydown", onKeyDown);
-    }, [filteredEvents, allFilteredExpanded]);
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        (ev.target as HTMLElement)?.isContentEditable
+      )
+        return;
+
+      // E toggles latest event payload
+      if (ev.key === "e" && !ev.shiftKey) {
+        const latest = filteredEvents[filteredEvents.length - 1]; // because `events` is oldest→newest
+        if (!latest) return;
+        toggleOpen(latest.id);
+        ev.preventDefault();
+      }
+
+      // Shift+E toggles all payloads
+      if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
+        if (anyPayloadClosed) expandAllPayloads();
+        else collapseAllPayloads();
+        ev.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filteredEvents, anyPayloadClosed, traceGroups]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -178,7 +364,7 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Connected Agents */}
         {agents.length > 0 && (
@@ -224,6 +410,7 @@ function App() {
               onClick={() => {
                 setEvents([]);
                 setOpenMap({});
+                setTraceOpenMap({});
               }}
               className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             >
@@ -232,123 +419,247 @@ function App() {
           </div>
         </div>
 
-        {/* Events List */}
+        {/* Traces */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Live Events</h2>
-            {filteredEvents.length > 0 && (
+            <h2 className="text-lg font-semibold">Live Traces</h2>
+
+            {filteredTraceGroups.length > 0 && (
               <button
                 onClick={() =>
-                  allFilteredExpanded ? collapseAll() : expandAll()
+                  anyPayloadClosed ? expandAllPayloads() : collapseAllPayloads()
                 }
                 className="text-xs text-gray-600 hover:text-gray-900 underline"
               >
-                {allFilteredExpanded ? "Collapse all" : "Expand all"}
+                {anyPayloadClosed
+                  ? "Expand all payloads"
+                  : "Collapse all payloads"}
               </button>
             )}
           </div>
 
-          <div className="divide-y divide-gray-200 max-h-[650px] overflow-y-auto">
-            {filteredEvents.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <p className="text-lg font-medium mb-2">No events yet</p>
-                <p className="text-sm">
-                  Start your instrumented application to see events here
-                </p>
-              </div>
-            ) : (
-              filteredEvents.map((event) => {
-                const isOpen = !!openMap[event.id];
-                const isCopied = copiedId === event.id;
+          <div className="px-4 pb-2 text-[11px] text-gray-500">
+            Tip: press <span className="font-mono">E</span> to toggle latest
+            payload • <span className="font-mono">Shift+E</span> to
+            expand/collapse all payloads
+          </div>
+          {/*Search & Filters */}
+          <div className="bg-white rounded-lg shadow mb-6 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search traces (route, model, payload text...)"
+              className="w-full sm:flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={showSlowOnly}
+                onChange={(e) => setShowSlowOnly(e.target.checked)}
+                className="rounded"
+              />
+              Slow only
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={showErrorsOnly}
+                onChange={(e) => setShowErrorsOnly(e.target.checked)}
+                className="rounded"
+              />
+              Errors only
+            </label>
+
+            <button
+              onClick={exportTracesJson}
+              disabled={filteredTraceGroups.length === 0}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition ${
+                filteredTraceGroups.length === 0
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
+            >
+              Export JSON
+            </button>
+            <div className="text-xs text-gray-500">
+              Showing {filteredTraceGroups.length} / {traceGroups.length}
+            </div>
+          </div>
+          {loadingHistory && filteredTraceGroups.length === 0 ? (
+            <div className="p-6 space-y-3">
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+              <div className="text-xs text-gray-400 pt-2">Loading history…</div>
+            </div>
+          ) : filteredTraceGroups.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <p className="text-lg font-medium mb-2">No events yet</p>
+              <p className="text-sm">
+                Start your instrumented application to see traces here
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {filteredTraceGroups.map((g) => {
+                const traceOpen = traceOpenMap[g.traceId] ?? true;
 
                 return (
-                  <div
-                    key={event.id}
-                    className="p-4 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        {/* Badges row */}
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeClasses(
-                              event.type
-                            )}`}
-                          >
-                            {event.type}
-                          </span>
+                  <div key={g.traceId} className="p-4">
+                    {/* Trace header */}
+                    <button
+                      onClick={() => toggleTrace(g.traceId)}
+                      className="w-full text-left flex items-center justify-between gap-3 rounded-lg bg-gray-50 hover:bg-gray-100 px-3 py-2 transition"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {g.headerOp}
+                        </span>
 
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${getLevelBadgeClasses(
-                              event.level
-                            )}`}
-                          >
-                            {event.level}
-                          </span>
+                        <span className="text-xs text-gray-500">
+                          {g.appName}
+                        </span>
 
+                        {g.totalDurationMs != null && (
                           <span className="text-xs text-gray-500">
-                            {event.appName}
+                            {g.totalDurationMs}ms total
                           </span>
+                        )}
 
-                          {event.durationMs != null && (
-                            <span className="text-xs text-gray-500">
-                              {event.durationMs}ms
-                            </span>
-                          )}
+                        <span className="text-xs text-gray-500">
+                          {g.events.length} event
+                          {g.events.length !== 1 ? "s" : ""}
+                        </span>
 
-                          {event.traceId && (
-                            <span className="text-xs text-gray-400 font-mono">
-                              trace:{event.traceId}
-                            </span>
-                          )}
+                        {g.displayTraceId && (
+                          <span className="text-xs text-gray-400 font-mono">
+                            trace:{g.displayTraceId}
+                          </span>
+                        )}
+                      </div>
+                      {/* Status badge */}
+                      {g.statusCode != null && (
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            g.ok
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-rose-100 text-rose-800"
+                          }`}
+                        >
+                          {g.statusCode}
+                        </span>
+                      )}
+
+                      {/* Slow badge */}
+                      {g.slow && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                          slow
+                        </span>
+                      )}
+
+                      {/* Error badge */}
+                      {g.hasError && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                          error
+                        </span>
+                      )}
+
+                      <div className="text-xs text-gray-500">
+                        {traceOpen ? "Collapse" : "Expand"}
+                      </div>
+                    </button>
+
+                    {/* Trace body */}
+                    {traceOpen && (
+                      <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
+                        <div className="divide-y divide-gray-200">
+                          {g.events.map((event) => {
+                            const isOpen = !!openMap[event.id];
+                            const isCopied = copiedId === event.id;
+
+                            return (
+                              <div
+                                key={event.id}
+                                className="p-3 hover:bg-gray-50 transition-colors"
+                              >
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      <span
+                                        className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeClasses(
+                                          event.type
+                                        )}`}
+                                      >
+                                        {event.type}
+                                      </span>
+
+                                      <span
+                                        className={`px-2 py-1 rounded text-xs font-medium ${getLevelBadgeClasses(
+                                          event.level
+                                        )}`}
+                                      >
+                                        {event.level}
+                                      </span>
+
+                                      {event.durationMs != null && (
+                                        <span className="text-xs text-gray-500">
+                                          {event.durationMs}ms
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <p className="font-mono text-sm text-gray-900 mb-2">
+                                      {event.operation}
+                                    </p>
+
+                                    {event.payload && (
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          onClick={() => toggleOpen(event.id)}
+                                          className="text-xs text-indigo-700 hover:text-indigo-900 underline"
+                                        >
+                                          {isOpen
+                                            ? "Hide payload"
+                                            : "Show payload"}
+                                        </button>
+
+                                        <button
+                                          onClick={() => copyPayload(event)}
+                                          className="text-xs text-gray-700 hover:text-gray-900 underline"
+                                        >
+                                          {isCopied
+                                            ? "Copied!"
+                                            : "Copy payload"}
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {event.payload && isOpen && (
+                                      <pre className="mt-2 text-xs text-gray-700 bg-gray-50 p-3 rounded overflow-x-auto leading-relaxed">
+                                        {JSON.stringify(event.payload, null, 2)}
+                                      </pre>
+                                    )}
+                                  </div>
+
+                                  <div className="text-xs text-gray-500 whitespace-nowrap">
+                                    {new Date(event.ts).toLocaleTimeString()}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-
-                        {/* Operation */}
-                        <p className="font-mono text-sm text-gray-900 mb-2">
-                          {event.operation}
-                        </p>
-
-                        {/* Payload actions */}
-                        {event.payload && (
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleOpen(event.id)}
-                              className="text-xs text-indigo-700 hover:text-indigo-900 underline"
-                            >
-                              {isOpen ? "Hide payload" : "Show payload"}
-                            </button>
-
-                            <button
-                              onClick={() => copyPayload(event)}
-                              className="text-xs text-gray-700 hover:text-gray-900 underline"
-                            >
-                              {isCopied ? "Copied!" : "Copy payload"}
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Payload block */}
-                        {event.payload && isOpen && (
-                          <pre className="mt-2 text-xs text-gray-700 bg-gray-50 p-3 rounded overflow-x-auto leading-relaxed">
-                            {JSON.stringify(event.payload, null, 2)}
-                          </pre>
-                        )}
                       </div>
-
-                      {/* Time */}
-                      <div className="text-xs text-gray-500 whitespace-nowrap">
-                        {new Date(event.ts).toLocaleTimeString()}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </div>
       </main>
     </div>
   );
 }
-
-export default App;

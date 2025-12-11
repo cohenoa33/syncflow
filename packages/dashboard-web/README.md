@@ -23,13 +23,23 @@ This runs both the Vite dev server (port 5173) and the Socket.IO server (port 50
 ```bash
 pnpm build
 ```
-
 ## Architecture
 
-- **Frontend**: React + TypeScript + Tailwind CSS v4 (port 5173)
-  Dashboard UI: http://localhost:5173
-- **Backend**: Express + Socket.IO server (port 5050)
-  Socket.IO server: http://localhost:5050  
+### Frontend (port 5173)
+- Vite + React + TypeScript + Tailwind v4
+- Live traces grouped by `traceId`
+- Search / filters (slow only, errors only)
+- Export traces to JSON
 
+### Backend (port 5050)
+- Express + Socket.IO server
+- Receives events from agents and broadcasts to clients
+- Persists events to MongoDB (`syncflow-dashboard`)
+- REST API:
+  - `GET /api/traces` → latest events
+  - `GET /api/traces/:traceId` → events for a trace
+  - `DELETE /api/traces` → dev-only clear
 
 The Socket.IO server receives events from agent-instrumented applications and broadcasts them to connected dashboard clients.
+
+> Mongo must be running locally on `mongodb://localhost:27017`.
