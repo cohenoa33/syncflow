@@ -252,19 +252,32 @@ const filteredTraceGroups = useMemo(() => {
   };
 
   // Expand/collapse all event payloads in visible traces
-  const expandAllPayloads = () =>
-    setOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of traceGroups) for (const e of g.events) next[e.id] = true;
-      return { ...m, ...next };
-    });
+const expandAllPayloads = () => {
+  // open all payloads
+  setOpenMap((m) => {
+    const next: Record<string, boolean> = {};
+    for (const g of filteredTraceGroups)
+      for (const e of g.events) next[e.id] = true;
+    return { ...m, ...next };
+  });
 
-  const collapseAllPayloads = () =>
-    setOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of traceGroups) for (const e of g.events) next[e.id] = false;
-      return { ...m, ...next };
-    });
+  // open all trace groups too
+  setTraceOpenMap((m) => {
+    const next: Record<string, boolean> = {};
+    for (const g of filteredTraceGroups) next[g.traceId] = true;
+    return { ...m, ...next };
+  });
+};
+
+const collapseAllPayloads = () => {
+  // close payloads but keep traces themselves visible
+  setOpenMap((m) => {
+    const next: Record<string, boolean> = {};
+    for (const g of filteredTraceGroups)
+      for (const e of g.events) next[e.id] = false;
+    return { ...m, ...next };
+  });
+};
 
   const anyPayloadClosed = traceGroups.some((g) =>
     g.events.some((e) => !openMap[e.id])
@@ -407,10 +420,19 @@ const filteredTraceGroups = useMemo(() => {
             ))}
 
             <button
-              onClick={() => {
+              onClick={async () => {
+                // optimistic UI clear
                 setEvents([]);
                 setOpenMap({});
                 setTraceOpenMap({});
+
+                try {
+                  await fetch("http://localhost:5050/api/traces", {
+                    method: "DELETE"
+                  });
+                } catch (err) {
+                  console.error("[Dashboard] failed to clear traces", err);
+                }
               }}
               className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             >
@@ -539,30 +561,32 @@ const filteredTraceGroups = useMemo(() => {
                           </span>
                         )}
                       </div>
-                      {/* Status badge */}
-                      {g.statusCode != null && (
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            g.ok
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-rose-100 text-rose-800"
-                          }`}
-                        >
-                          {g.statusCode}
-                        </span>
-                      )}
+                      {/* Status + error/slow badges grouped */}
+                      {(g.statusCode != null || g.slow || g.hasError) && (
+                        <span className="inline-flex items-center gap-1">
+                          {g.statusCode != null && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                g.ok
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-rose-100 text-rose-800"
+                              }`}
+                            >
+                              {g.statusCode}
+                            </span>
+                          )}
 
-                      {/* Slow badge */}
-                      {g.slow && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                          slow
-                        </span>
-                      )}
+                          {g.hasError && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                              error
+                            </span>
+                          )}
 
-                      {/* Error badge */}
-                      {g.hasError && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
-                          error
+                          {g.slow && !g.hasError && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                              slow
+                            </span>
+                          )}
                         </span>
                       )}
 

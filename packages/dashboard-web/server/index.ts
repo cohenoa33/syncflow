@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import cors from "cors";
 
 import mongoose from "mongoose";
 
@@ -32,6 +33,13 @@ mongoose
   const EventModel = mongoose.model("SyncFlowEvent", EventSchema);
 
 const app = express();
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "DELETE", "OPTIONS"]
+  })
+);
+app.use(express.json());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -111,10 +119,20 @@ app.get("/api/traces/:traceId", async (req, res) => {
   res.json(traceEvents);
 });
 
-// Dev-only clear
+
 app.delete("/api/traces", async (_req, res) => {
-  await EventModel.deleteMany({});
-  res.json({ ok: true });
+  try {
+    // delete from Mongo
+    await EventModel.deleteMany({});
+    // clear in-memory buffer too
+    events.length = 0;
+
+    console.log("[Dashboard] Cleared all traces");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[Dashboard] Failed to clear traces", err);
+    res.status(500).json({ ok: false });
+  }
 });
 
 httpServer.listen(PORT, () => {

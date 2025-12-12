@@ -4,7 +4,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export interface SyncFlowAgentOptions {
   dashboardUrl?: string;
   appName?: string;
-  // future fields (Step 7+)
   slowMsThreshold?: number;
 }
 
