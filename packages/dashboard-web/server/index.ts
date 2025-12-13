@@ -2,7 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from "cors";
-
+import path from "path";
+import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 
 const MONGODB_URI =
@@ -248,9 +249,11 @@ const appName = "mern-sample-app";
     }
   );
 
-  // Ensure chronological order in DB is fine (ts is what we sort by)
   return eventsToInsert;
 }
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const app = express();
 app.use(
   cors({
@@ -316,7 +319,7 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = 5050;
+const PORT = Number(process.env.PORT || 5050);
 
 // Get latest traces (grouped)
 app.get("/api/traces", async (_req, res) => {
@@ -378,6 +381,14 @@ app.post("/api/demo-seed", async (_req, res) => {
     console.error("[Dashboard] Failed to seed demo traces", err);
     res.status(500).json({ ok: false });
   }
+});
+// Serve built dashboard UI (production)
+const distPath = path.resolve(__dirname, "../dist");
+app.use(express.static(distPath));
+
+// SPA fallback (so /route works)
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
 });
 
 httpServer.listen(PORT, () => {

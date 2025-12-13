@@ -190,6 +190,11 @@ pnpm clean
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
 
+## Deployment Notes
+
+SyncFlow is currently deployed on Render for demo purposes.
+
+
 ## 📄 License
 
 MIT License - see [LICENSE](./LICENSE) for details.

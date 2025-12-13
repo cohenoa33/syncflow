@@ -4,13 +4,14 @@
   "description": "SyncFlow dashboard - real-time monitoring for MERN apps",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"pnpm:dev:vite\" \"pnpm:dev:server\"",
-    "dev:vite": "vite",
-    "dev:server": "tsx watch server/index.ts",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "server": "tsx server/index.ts"
-  },
+  "dev": "concurrently \"pnpm:dev:vite\" \"pnpm:dev:server\"",
+  "dev:vite": "vite",
+  "dev:server": "tsx watch server/index.ts",
+  "build": "vite build",
+  "typecheck": "tsc --noEmit",
+  "preview": "vite preview",
+  "start": "tsx server/index.ts"
+},
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
