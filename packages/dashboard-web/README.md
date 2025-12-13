@@ -73,6 +73,8 @@ Clears **all** traces from:
 - MongoDB (syncflow-dashboard)
 - The dashboard server’s in-memory event buffer
 This endpoint powers the **Clear** button in the UI, so after clearing, a page refresh will still show an empty state until new events arrive.
+- `POST /api/demo-seed` 
+seeds a small set of realistic demo traces (used for recording demos)
 
 The Socket.IO server receives events from agent-instrumented applications and broadcasts them to all connected dashboard clients in real time.
 

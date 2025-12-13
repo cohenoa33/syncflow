@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 interface Event {
   id: string;
   appName: string;
-  type: "express" | "mongoose" | "error";
+  type: "express" | "mongoose"
   operation: string;
   ts: number;
   durationMs?: number;
@@ -113,10 +113,16 @@ const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
     return () => {socket.close()};
   }, []);
-  const filteredEvents = useMemo(
-    () => events.filter((e) => filter === "all" || e.type === filter),
-    [events, filter]
-  );
+const filteredEvents = useMemo(() => {
+  if (filter === "all") return events;
+
+  if (filter === "error") {
+    return events.filter((e) => e.level === "error");
+  }
+
+  return events.filter((e) => e.type === filter);
+}, [events, filter]);
+
 
   const traceGroups: TraceGroup[] = useMemo(() => {
     const map = new Map<string, Event[]>();
@@ -144,7 +150,7 @@ const [showErrorsOnly, setShowErrorsOnly] = useState(false);
         (typeof statusCode === "number" ? statusCode < 400 : undefined);
 
       const hasError = ordered.some(
-        (e) => e.level === "error" || e.type === "error"
+        (e) => e.level === "error"
       );
 
       const slow =
@@ -181,6 +187,7 @@ const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
     // Sort traces newest first by start time
     groups.sort((a, b) => b.startedAt - a.startedAt);
+    
     return groups;
   }, [filteredEvents]);
 const filteredTraceGroups = useMemo(() => {
@@ -414,7 +421,9 @@ const collapseAllPayloads = () => {
                 {t === "all"
                   ? `All (${events.length})`
                   : `${t[0].toUpperCase() + t.slice(1)} (${
-                      events.filter((e) => e.type === t).length
+                      t === "error"
+                        ? events.filter((e) => e.level === "error").length
+                        : events.filter((e) => e.type === t).length
                     })`}
               </button>
             ))}
@@ -437,6 +446,76 @@ const collapseAllPayloads = () => {
               className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             >
               Clear
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  // 1) wipe
+                  await fetch("http://localhost:5050/api/traces", {
+                    method: "DELETE"
+                  });
+
+                  // optimistic UI reset
+                  setEvents([]);
+                  setOpenMap({});
+                  setTraceOpenMap({});
+
+                  // 2) seed
+                  const res = await fetch(
+                    "http://localhost:5050/api/demo-seed",
+                    {
+                      method: "POST"
+                    }
+                  );
+                  const json: {
+                    ok: boolean;
+                    count: number;
+                    traceIds?: string[];
+                  } = await res.json();
+
+                  // 3) fetch fresh events from DB (so UI has full state)
+                  const eventsRes = await fetch(
+                    "http://localhost:5050/api/traces"
+                  );
+                  const data: Event[] = await eventsRes.json();
+                  const ordered = [...data].sort((a, b) => a.ts - b.ts);
+                  setEvents(ordered);
+
+                  // init maps
+                  const initialOpen: Record<string, boolean> = {};
+                  const initialTraceOpen: Record<string, boolean> = {};
+                  for (const e of ordered) {
+                    initialOpen[e.id] = false;
+                    const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
+                    if (!(key in initialTraceOpen))
+                      initialTraceOpen[key] = false; // default closed for demo
+                  }
+
+                  const newestTraceId =
+                    json.traceIds?.[json.traceIds.length - 1];
+                  if (newestTraceId) initialTraceOpen[newestTraceId] = true;
+
+                  if (newestTraceId) {
+                    const newestTraceEvents = ordered
+                      .filter((e) => e.traceId === newestTraceId)
+                      .sort((a, b) => b.ts - a.ts);
+
+                    const latestExpress = newestTraceEvents.find(
+                      (e) => e.type === "express"
+                    );
+                    if (latestExpress) initialOpen[latestExpress.id] = true;
+                  }
+
+                  setOpenMap(initialOpen);
+                  setTraceOpenMap(initialTraceOpen);
+                } catch (err) {
+                  console.error("[Dashboard] demo mode failed", err);
+                  alert("Demo Mode failed. Check the dashboard server logs.");
+                }
+              }}
+              className="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+            >
+              Demo Mode
             </button>
           </div>
         </div>
