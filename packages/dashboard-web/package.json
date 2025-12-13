@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "SyncFlow dashboard - real-time monitoring for MERN apps",
   "type": "module",
+  "include": ["src"],
   "scripts": {
   "dev": "concurrently \"pnpm:dev:vite\" \"pnpm:dev:server\"",
   "dev:vite": "vite",

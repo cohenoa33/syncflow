@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
+import { API_BASE, SOCKET_URL } from "./lib/config";
 
 interface Event {
   id: string;
   appName: string;
-  type: "express" | "mongoose"
+  type: "express" | "mongoose" | "error";
   operation: string;
   ts: number;
   durationMs?: number;
@@ -38,29 +39,37 @@ export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
+
   const [filter, setFilter] = useState<
     "all" | "express" | "mongoose" | "error"
   >("all");
-
+  const [appFilter, setAppFilter] = useState<string | "all">("all");
 
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [traceOpenMap, setTraceOpenMap] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [loadingHistory, setLoadingHistory] = useState(true);
-const [query, setQuery] = useState("");
-const [showSlowOnly, setShowSlowOnly] = useState(false);
-const [showErrorsOnly, setShowErrorsOnly] = useState(false);
-  useEffect(() => {
 
-    // 1) Load persisted events first (so refresh shows history)
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  const [query, setQuery] = useState("");
+  const [showSlowOnly, setShowSlowOnly] = useState(false);
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+
+
+  // ----- Socket + initial load -----
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1) Load persisted history from API (Mongo-backed)
     (async () => {
       try {
         setLoadingHistory(true);
-
-        const res = await fetch("http://localhost:5050/api/traces");
+        const res = await fetch(`${API_BASE}/api/traces`);
         const data: Event[] = await res.json();
 
         const ordered = [...data].sort((a, b) => a.ts - b.ts);
+        if (!isMounted) return;
+
         setEvents(ordered);
 
         const initialOpen: Record<string, boolean> = {};
@@ -75,21 +84,19 @@ const [showErrorsOnly, setShowErrorsOnly] = useState(false);
       } catch (err) {
         console.error("[Dashboard] failed to load traces", err);
       } finally {
-        setLoadingHistory(false);
+        if (isMounted) setLoadingHistory(false);
       }
     })();
 
-
-    // 2) Then attach live socket
-    const socket = io("http://localhost:5050");
-
-    socket.on("connect", () => {
-      setConnected(true);
-      // optional: still ask for in-memory events (won’t hurt)
-      socket.emit("getEvents");
+    // 2) Attach live socket
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"]
     });
 
+    socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
+
+    socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
       setEvents((prev) => [...prev, event].slice(-1000));
@@ -99,31 +106,77 @@ const [showErrorsOnly, setShowErrorsOnly] = useState(false);
       setTraceOpenMap((m) => (key in m ? m : { ...m, [key]: true }));
     });
 
+    // Server broadcasts this on CLEAR so all tabs reset
     socket.on("eventHistory", (history: Event[]) => {
-      // keep whichever is larger: DB history or memory history
-      setEvents((prev) => {
-        const merged = [...prev, ...history];
-        const dedup = new Map<string, Event>();
-        for (const e of merged) dedup.set(e.id, e);
-        return [...dedup.values()].sort((a, b) => a.ts - b.ts).slice(-1000);
-      });
+      const ordered = [...history].sort((a, b) => a.ts - b.ts);
+      setEvents(ordered);
+
+      const initialOpen: Record<string, boolean> = {};
+      const initialTraceOpen: Record<string, boolean> = {};
+      for (const e of ordered) {
+        initialOpen[e.id] = false;
+        const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
+        if (!(key in initialTraceOpen)) initialTraceOpen[key] = true;
+      }
+      setOpenMap(initialOpen);
+      setTraceOpenMap(initialTraceOpen);
     });
 
-    socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
-
-    return () => {socket.close()};
+    return () => {
+      isMounted = false;
+      socket.close();
+    };
   }, []);
-const filteredEvents = useMemo(() => {
-  if (filter === "all") return events;
 
-  if (filter === "error") {
-    return events.filter((e) => e.level === "error");
+  // ----- Local UI helpers -----
+  const toggleOpen = (id: string) =>
+    setOpenMap((m) => ({ ...m, [id]: !m[id] }));
+  const toggleTrace = (traceId: string) =>
+    setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
+
+  const copyPayload = async (event: Event) => {
+    try {
+      const text = JSON.stringify(event.payload ?? {}, null, 2);
+      await navigator.clipboard.writeText(text);
+      setCopiedId(event.id);
+      setTimeout(() => {
+        setCopiedId((cur) => (cur === event.id ? null : cur));
+      }, 1200);
+    } catch (err) {
+      console.error("Failed to copy payload", err);
+      alert("Copy failed. Your browser may block clipboard access.");
+    }
+  };
+
+  const getTypeBadgeClasses = (type: Event["type"]) =>
+    type === "express"
+      ? "bg-blue-100 text-blue-800"
+      : type === "mongoose"
+        ? "bg-green-100 text-green-800"
+        : "bg-red-100 text-red-800";
+
+  const getLevelBadgeClasses = (level: Event["level"]) =>
+    level === "info"
+      ? "bg-slate-100 text-slate-700"
+      : level === "warn"
+        ? "bg-amber-100 text-amber-800"
+        : "bg-rose-100 text-rose-800";
+
+  // ----- Filtering -----
+const filteredEvents = useMemo(() => {
+  let out = events;
+
+  if (appFilter !== "all") {
+    out = out.filter((e) => e.appName === appFilter);
   }
 
-  return events.filter((e) => e.type === filter);
-}, [events, filter]);
+  if (filter === "error") return out.filter((e) => e.level === "error");
+  if (filter !== "all") return out.filter((e) => e.type === filter);
 
+  return out;
+}, [events, filter, appFilter]);
 
+  // ----- Group into traces -----
   const traceGroups: TraceGroup[] = useMemo(() => {
     const map = new Map<string, Event[]>();
 
@@ -136,7 +189,6 @@ const filteredEvents = useMemo(() => {
     const groups: TraceGroup[] = [];
 
     for (const [traceId, evs] of map.entries()) {
-      // Order within trace oldest → newest
       const ordered = [...evs].sort((a, b) => a.ts - b.ts);
 
       const expressEvt = ordered.find((x) => x.type === "express");
@@ -150,23 +202,23 @@ const filteredEvents = useMemo(() => {
         (typeof statusCode === "number" ? statusCode < 400 : undefined);
 
       const hasError = ordered.some(
-        (e) => e.level === "error"
+        (e) => e.level === "error" || e.type === "error"
       );
 
       const slow =
         typeof expressEvt?.durationMs === "number"
-          ? expressEvt!.durationMs > 500
+          ? expressEvt.durationMs > 500
           : ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0) > 800;
+
       const headerOp =
         expressEvt?.operation ?? ordered[0]?.operation ?? "Trace";
       const appName = expressEvt?.appName ?? ordered[0]?.appName ?? "app";
       const startedAt = ordered[0]?.ts ?? Date.now();
       const hasExpress = !!expressEvt;
 
-      // best-effort total duration:
       const totalDurationMs =
-        (expressEvt?.durationMs ??
-          ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0)) ||
+        expressEvt?.durationMs ??
+        ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0) ??
         undefined;
 
       groups.push({
@@ -185,110 +237,99 @@ const filteredEvents = useMemo(() => {
       });
     }
 
-    // Sort traces newest first by start time
     groups.sort((a, b) => b.startedAt - a.startedAt);
-    
     return groups;
   }, [filteredEvents]);
-const filteredTraceGroups = useMemo(() => {
-  const q = query.trim().toLowerCase();
 
-  return traceGroups.filter((g) => {
-    if (showSlowOnly && !g.slow) return false;
-    if (showErrorsOnly && !g.hasError) return false;
+  const filteredTraceGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
 
-    if (!q) return true;
+    return traceGroups.filter((g) => {
+      if (showSlowOnly && !g.slow) return false;
+      if (showErrorsOnly && !g.hasError) return false;
 
-    // match route/app
-    if (g.headerOp.toLowerCase().includes(q)) return true;
-    if (g.appName.toLowerCase().includes(q)) return true;
+      if (!q) return true;
 
-    // match any event operation
-    if (g.events.some((e) => e.operation.toLowerCase().includes(q)))
-      return true;
+      if (g.headerOp.toLowerCase().includes(q)) return true;
+      if (g.appName.toLowerCase().includes(q)) return true;
 
-    // match payload (best-effort, avoid heavy stringify)
-    try {
-      const sample = g.events
-        .slice(0, 4)
-        .map((e) => JSON.stringify(e.payload ?? {}))
-        .join(" ");
-      if (sample.toLowerCase().includes(q)) return true;
-    } catch {
-      /* ignore */
-    }
+      if (g.events.some((e) => e.operation.toLowerCase().includes(q)))
+        return true;
 
-    return false;
-  });
-}, [traceGroups, query, showSlowOnly, showErrorsOnly]);
+      try {
+        const sample = g.events
+          .slice(0, 4)
+          .map((e) => JSON.stringify(e.payload ?? {}))
+          .join(" ");
+        if (sample.toLowerCase().includes(q)) return true;
+      } catch {
+        // ignore
+      }
 
+      return false;
+    });
+  }, [traceGroups, query, showSlowOnly, showErrorsOnly]);
 
-  const getTypeBadgeClasses = (type: Event["type"]) =>
-    type === "express"
-      ? "bg-blue-100 text-blue-800"
-      : type === "mongoose"
-        ? "bg-green-100 text-green-800"
-        : "bg-red-100 text-red-800";
+  
+  // ----- Expand / collapse all payloads -----
+  const expandAllPayloads = () => {
+    setOpenMap((m) => {
+      const next: Record<string, boolean> = {};
+      for (const g of filteredTraceGroups)
+        for (const e of g.events) next[e.id] = true;
+      return { ...m, ...next };
+    });
 
-  const getLevelBadgeClasses = (level: Event["level"]) =>
-    level === "info"
-      ? "bg-slate-100 text-slate-700"
-      : level === "warn"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-rose-100 text-rose-800";
-
-  // Helpers: 
-  const toggleOpen = (id: string) =>
-    setOpenMap((m) => ({ ...m, [id]: !m[id] }));
-
-  const toggleTrace = (traceId: string) =>
-    setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
-
-  const copyPayload = async (event: Event) => {
-    try {
-      const text = JSON.stringify(event.payload ?? {}, null, 2);
-      await navigator.clipboard.writeText(text);
-      setCopiedId(event.id);
-      setTimeout(() => {
-        setCopiedId((cur) => (cur === event.id ? null : cur));
-      }, 1200);
-    } catch (err) {
-      console.error("Failed to copy payload", err);
-      alert("Copy failed. Your browser may block clipboard access.");
-    }
+    setTraceOpenMap((m) => {
+      const next: Record<string, boolean> = {};
+      for (const g of filteredTraceGroups) next[g.traceId] = true;
+      return { ...m, ...next };
+    });
   };
 
-  // Expand/collapse all event payloads in visible traces
-const expandAllPayloads = () => {
-  // open all payloads
-  setOpenMap((m) => {
-    const next: Record<string, boolean> = {};
-    for (const g of filteredTraceGroups)
-      for (const e of g.events) next[e.id] = true;
-    return { ...m, ...next };
-  });
+  const collapseAllPayloads = () => {
+    setOpenMap((m) => {
+      const next: Record<string, boolean> = {};
+      for (const g of filteredTraceGroups)
+        for (const e of g.events) next[e.id] = false;
+      return { ...m, ...next };
+    });
+  };
 
-  // open all trace groups too
-  setTraceOpenMap((m) => {
-    const next: Record<string, boolean> = {};
-    for (const g of filteredTraceGroups) next[g.traceId] = true;
-    return { ...m, ...next };
-  });
-};
-
-const collapseAllPayloads = () => {
-  // close payloads but keep traces themselves visible
-  setOpenMap((m) => {
-    const next: Record<string, boolean> = {};
-    for (const g of filteredTraceGroups)
-      for (const e of g.events) next[e.id] = false;
-    return { ...m, ...next };
-  });
-};
-
-  const anyPayloadClosed = traceGroups.some((g) =>
+  const anyPayloadClosed = filteredTraceGroups.some((g) =>
     g.events.some((e) => !openMap[e.id])
   );
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        (ev.target as HTMLElement)?.isContentEditable
+      )
+        return;
+
+      // E toggles latest event payload
+      if (ev.key === "e" && !ev.shiftKey) {
+        const latest = filteredEvents[filteredEvents.length - 1];
+        if (!latest) return;
+        toggleOpen(latest.id);
+        ev.preventDefault();
+      }
+
+      // Shift+E toggles all payloads
+      if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
+        if (anyPayloadClosed) expandAllPayloads();
+        else collapseAllPayloads();
+        ev.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filteredEvents, anyPayloadClosed, filteredTraceGroups]);
 
   const exportTracesJson = () => {
     const exportPayload = filteredTraceGroups.map((g) => ({
@@ -319,36 +360,71 @@ const collapseAllPayloads = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const onKeyDown = (ev: KeyboardEvent) => {
-      const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
-      if (
-        tag === "input" ||
-        tag === "textarea" ||
-        (ev.target as HTMLElement)?.isContentEditable
-      )
-        return;
+  const clearAll = async () => {
+    // optimistic UI clear
+    setEvents([]);
+    setOpenMap({});
+    setTraceOpenMap({});
 
-      // E toggles latest event payload
-      if (ev.key === "e" && !ev.shiftKey) {
-        const latest = filteredEvents[filteredEvents.length - 1]; // because `events` is oldest→newest
-        if (!latest) return;
-        toggleOpen(latest.id);
-        ev.preventDefault();
+    try {
+      await fetch(`${API_BASE}/api/traces`, { method: "DELETE" });
+    } catch (err) {
+      console.error("[Dashboard] failed to clear traces", err);
+    }
+  };
+
+  const runDemo = async () => {
+    try {
+      // 1) wipe
+      await fetch(`${API_BASE}/api/traces`, { method: "DELETE" });
+
+      // optimistic UI reset
+      setEvents([]);
+      setOpenMap({});
+      setTraceOpenMap({});
+
+      // 2) seed
+      const res = await fetch(`${API_BASE}/api/demo-seed`, { method: "POST" });
+      const json: { ok: boolean; count: number; traceIds?: string[] } =
+        await res.json();
+
+      // 3) fetch fresh from DB (authoritative)
+      const eventsRes = await fetch(`${API_BASE}/api/traces`);
+      const data: Event[] = await eventsRes.json();
+      const ordered = [...data].sort((a, b) => a.ts - b.ts);
+      setEvents(ordered);
+
+      // init maps
+      const initialOpen: Record<string, boolean> = {};
+      const initialTraceOpen: Record<string, boolean> = {};
+      for (const e of ordered) {
+        initialOpen[e.id] = false;
+        const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
+        if (!(key in initialTraceOpen)) initialTraceOpen[key] = false;
       }
 
-      // Shift+E toggles all payloads
-      if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
-        if (anyPayloadClosed) expandAllPayloads();
-        else collapseAllPayloads();
-        ev.preventDefault();
-      }
-    };
+      const newestTraceId = json.traceIds?.[json.traceIds.length - 1];
+      if (newestTraceId) initialTraceOpen[newestTraceId] = true;
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredEvents, anyPayloadClosed, traceGroups]);
+      // open the latest express payload in that newest trace
+      if (newestTraceId) {
+        const newestTraceEvents = ordered
+          .filter((e) => e.traceId === newestTraceId)
+          .sort((a, b) => b.ts - a.ts);
+
+        const latestExpress = newestTraceEvents.find(
+          (e) => e.type === "express"
+        );
+        if (latestExpress) initialOpen[latestExpress.id] = true;
+      }
+
+      setOpenMap(initialOpen);
+      setTraceOpenMap(initialTraceOpen);
+    } catch (err) {
+      console.error("[Dashboard] demo mode failed", err);
+      alert("Demo Mode failed. Check the dashboard server logs.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -405,7 +481,7 @@ const collapseAllPayloads = () => {
           </div>
         )}
 
-        {/* Filters */}
+        {/* Type Filters + Actions */}
         <div className="bg-white rounded-lg shadow mb-6 p-4">
           <div className="flex gap-2 flex-wrap">
             {(["all", "express", "mongoose", "error"] as const).map((t) => (
@@ -420,99 +496,23 @@ const collapseAllPayloads = () => {
               >
                 {t === "all"
                   ? `All (${events.length})`
-                  : `${t[0].toUpperCase() + t.slice(1)} (${
-                      t === "error"
-                        ? events.filter((e) => e.level === "error").length
-                        : events.filter((e) => e.type === t).length
-                    })`}
+                  : t === "error"
+                    ? `Error (${events.filter((e) => e.level === "error").length})`
+                    : `${t[0].toUpperCase() + t.slice(1)} (${
+                        events.filter((e) => e.type === t).length
+                      })`}
               </button>
             ))}
 
             <button
-              onClick={async () => {
-                // optimistic UI clear
-                setEvents([]);
-                setOpenMap({});
-                setTraceOpenMap({});
-
-                try {
-                  await fetch("http://localhost:5050/api/traces", {
-                    method: "DELETE"
-                  });
-                } catch (err) {
-                  console.error("[Dashboard] failed to clear traces", err);
-                }
-              }}
+              onClick={clearAll}
               className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             >
               Clear
             </button>
+
             <button
-              onClick={async () => {
-                try {
-                  // 1) wipe
-                  await fetch("http://localhost:5050/api/traces", {
-                    method: "DELETE"
-                  });
-
-                  // optimistic UI reset
-                  setEvents([]);
-                  setOpenMap({});
-                  setTraceOpenMap({});
-
-                  // 2) seed
-                  const res = await fetch(
-                    "http://localhost:5050/api/demo-seed",
-                    {
-                      method: "POST"
-                    }
-                  );
-                  const json: {
-                    ok: boolean;
-                    count: number;
-                    traceIds?: string[];
-                  } = await res.json();
-
-                  // 3) fetch fresh events from DB (so UI has full state)
-                  const eventsRes = await fetch(
-                    "http://localhost:5050/api/traces"
-                  );
-                  const data: Event[] = await eventsRes.json();
-                  const ordered = [...data].sort((a, b) => a.ts - b.ts);
-                  setEvents(ordered);
-
-                  // init maps
-                  const initialOpen: Record<string, boolean> = {};
-                  const initialTraceOpen: Record<string, boolean> = {};
-                  for (const e of ordered) {
-                    initialOpen[e.id] = false;
-                    const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
-                    if (!(key in initialTraceOpen))
-                      initialTraceOpen[key] = false; // default closed for demo
-                  }
-
-                  const newestTraceId =
-                    json.traceIds?.[json.traceIds.length - 1];
-                  if (newestTraceId) initialTraceOpen[newestTraceId] = true;
-
-                  if (newestTraceId) {
-                    const newestTraceEvents = ordered
-                      .filter((e) => e.traceId === newestTraceId)
-                      .sort((a, b) => b.ts - a.ts);
-
-                    const latestExpress = newestTraceEvents.find(
-                      (e) => e.type === "express"
-                    );
-                    if (latestExpress) initialOpen[latestExpress.id] = true;
-                  }
-
-                  setOpenMap(initialOpen);
-                  setTraceOpenMap(initialTraceOpen);
-                } catch (err) {
-                  console.error("[Dashboard] demo mode failed", err);
-                  alert("Demo Mode failed. Check the dashboard server logs.");
-                }
-              }}
+              onClick={runDemo}
               className="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
             >
               Demo Mode
@@ -544,50 +544,67 @@ const collapseAllPayloads = () => {
             payload • <span className="font-mono">Shift+E</span> to
             expand/collapse all payloads
           </div>
-          {/*Search & Filters */}
-          <div className="bg-white rounded-lg shadow mb-6 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search traces (route, model, payload text...)"
-              className="w-full sm:flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
 
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+          {/* Search & flags */}
+          <div className="px-4 pb-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               <input
-                type="checkbox"
-                checked={showSlowOnly}
-                onChange={(e) => setShowSlowOnly(e.target.checked)}
-                className="rounded"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search traces (route, model, payload text...)"
+                className="w-full sm:flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              Slow only
-            </label>
 
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={showErrorsOnly}
-                onChange={(e) => setShowErrorsOnly(e.target.checked)}
-                className="rounded"
-              />
-              Errors only
-            </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={showSlowOnly}
+                  onChange={(e) => setShowSlowOnly(e.target.checked)}
+                  className="rounded"
+                />
+                Slow only
+              </label>
 
-            <button
-              onClick={exportTracesJson}
-              disabled={filteredTraceGroups.length === 0}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition ${
-                filteredTraceGroups.length === 0
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
-              }`}
-            >
-              Export JSON
-            </button>
-            <div className="text-xs text-gray-500">
-              Showing {filteredTraceGroups.length} / {traceGroups.length}
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={showErrorsOnly}
+                  onChange={(e) => setShowErrorsOnly(e.target.checked)}
+                  className="rounded"
+                />
+                Errors only
+              </label>
+              <select
+                value={appFilter}
+                onChange={(e) => setAppFilter(e.target.value)}
+                className="px-2 py-1 border rounded text-sm"
+              >
+                <option value="all">All apps</option>
+                {agents.map((a) => (
+                  <option key={a.appName} value={a.appName}>
+                    {a.appName}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={exportTracesJson}
+                disabled={filteredTraceGroups.length === 0}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition ${
+                  filteredTraceGroups.length === 0
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                Export JSON
+              </button>
+
+              <div className="text-xs text-gray-500">
+                Showing {filteredTraceGroups.length} / {traceGroups.length}
+              </div>
             </div>
           </div>
+
           {loadingHistory && filteredTraceGroups.length === 0 ? (
             <div className="p-6 space-y-3">
               <div className="h-10 bg-gray-100 rounded animate-pulse" />
@@ -609,7 +626,6 @@ const collapseAllPayloads = () => {
 
                 return (
                   <div key={g.traceId} className="p-4">
-                    {/* Trace header */}
                     <button
                       onClick={() => toggleTrace(g.traceId)}
                       className="w-full text-left flex items-center justify-between gap-3 rounded-lg bg-gray-50 hover:bg-gray-100 px-3 py-2 transition"
@@ -640,7 +656,7 @@ const collapseAllPayloads = () => {
                           </span>
                         )}
                       </div>
-                      {/* Status + error/slow badges grouped */}
+
                       {(g.statusCode != null || g.slow || g.hasError) && (
                         <span className="inline-flex items-center gap-1">
                           {g.statusCode != null && (
@@ -674,7 +690,6 @@ const collapseAllPayloads = () => {
                       </div>
                     </button>
 
-                    {/* Trace body */}
                     {traceOpen && (
                       <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
                         <div className="divide-y divide-gray-200">
