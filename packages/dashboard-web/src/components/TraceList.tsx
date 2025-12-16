@@ -19,7 +19,10 @@ type Props = {
   toggleInsight: (traceId: string) => void;
   insightMap: Record<string, any>;
   insightOpenMap: Record<string, boolean>;
-  setInsightOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setInsightOpenMap: React.Dispatch<
+    React.SetStateAction<Record<string, boolean>>
+  >;
+  onRegenerateInsight: (traceId: string) => void;
 };
 
 export function TraceList({
@@ -37,7 +40,8 @@ export function TraceList({
   toggleInsight,
   insightOpenMap,
   insightMap,
-  setInsightOpenMap
+  setInsightOpenMap,
+  onRegenerateInsight
 }: Props) {
   const getTypeBadgeClasses = (type: Event["type"]) =>
     type === "express"
@@ -175,102 +179,98 @@ export function TraceList({
                     <div className="text-xs text-gray-500">
                       {traceOpen ? "Collapse" : "Expand"}
                     </div>
-              
                   </div>
                 </button>
-               {traceOpen && (
-  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden bg-white">
-    {/* Trace-body header row */}
-    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
-      <div className="text-xs font-medium text-gray-700">
-        Events ({g.events.length})
-      </div>
+                {traceOpen && (
+                  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden bg-white">
+                    {/* Trace-body header row */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                      <div className="text-xs font-medium text-gray-700">
+                        Events ({g.events.length})
+                      </div>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleTrace(g.traceId);
-        }}
-        className="text-xs text-gray-500 hover:text-gray-900"
-        aria-label="Collapse trace"
-        title="Collapse"
-      >
-        ✕
-      </button>
-    </div>
-                      {g.events.map((event) => {
-                        const isOpen = !!openMap[event.id];
-                        const isCopied = copiedId === event.id;
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleTrace(g.traceId);
+                        }}
+                        className="text-xs text-gray-500 hover:text-gray-900"
+                        aria-label="Collapse trace"
+                        title="Collapse"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {g.events.map((event) => {
+                      const isOpen = !!openMap[event.id];
+                      const isCopied = copiedId === event.id;
 
-                        return (
-                          <div key={event.id} className="p-3 transition-colors">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <span
-                                    className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeClasses(
-                                      event.type
-                                    )}`}
-                                  >
-                                    {event.type}
+                      return (
+                        <div key={event.id} className="p-3 transition-colors">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeClasses(
+                                    event.type
+                                  )}`}
+                                >
+                                  {event.type}
+                                </span>
+
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-medium ${getLevelBadgeClasses(
+                                    event.level
+                                  )}`}
+                                >
+                                  {event.level}
+                                </span>
+
+                                {event.durationMs != null && (
+                                  <span className="text-xs text-gray-500">
+                                    {event.durationMs}ms
                                   </span>
+                                )}
+                              </div>
 
-                                  <span
-                                    className={`px-2 py-1 rounded text-xs font-medium ${getLevelBadgeClasses(
-                                      event.level
-                                    )}`}
+                              <p className="font-mono text-sm text-gray-900 mb-2">
+                                {event.operation}
+                              </p>
+
+                              {event.payload && (
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => onTogglePayload(event.id)}
+                                    className="text-xs text-indigo-700 hover:text-indigo-900 underline"
                                   >
-                                    {event.level}
-                                  </span>
+                                    {isOpen ? "Hide payload" : "Show payload"}
+                                  </button>
 
-                                  {event.durationMs != null && (
-                                    <span className="text-xs text-gray-500">
-                                      {event.durationMs}ms
-                                    </span>
-                                  )}
+                                  <button
+                                    onClick={() => onCopyPayload(event)}
+                                    className="text-xs text-gray-700 hover:text-gray-900 underline"
+                                  >
+                                    {isCopied ? "Copied!" : "Copy payload"}
+                                  </button>
                                 </div>
+                              )}
 
-                                <p className="font-mono text-sm text-gray-900 mb-2">
-                                  {event.operation}
-                                </p>
+                              {event.payload && isOpen && (
+                                <pre className="mt-2 text-xs text-gray-700 bg-gray-50 p-3 rounded overflow-x-auto leading-relaxed">
+                                  {JSON.stringify(event.payload, null, 2)}
+                                </pre>
+                              )}
+                            </div>
 
-                                {event.payload && (
-                                  <div className="flex items-center gap-3">
-                                    <button
-                                      onClick={() => onTogglePayload(event.id)}
-                                      className="text-xs text-indigo-700 hover:text-indigo-900 underline"
-                                    >
-                                      {isOpen ? "Hide payload" : "Show payload"}
-                                    </button>
-
-                                    <button
-                                      onClick={() => onCopyPayload(event)}
-                                      className="text-xs text-gray-700 hover:text-gray-900 underline"
-                                    >
-                                      {isCopied ? "Copied!" : "Copy payload"}
-                                    </button>
-                                  </div>
-                                )}
-
-                                {event.payload && isOpen && (
-                                  <pre className="mt-2 text-xs text-gray-700 bg-gray-50 p-3 rounded overflow-x-auto leading-relaxed">
-                                    {JSON.stringify(event.payload, null, 2)}
-                                  </pre>
-                                )}
-                              </div>
-
-                              <div className="text-xs text-gray-500 whitespace-nowrap">
-                                {new Date(event.ts).toLocaleTimeString()}
-                              </div>
-
-                          
+                            <div className="text-xs text-gray-500 whitespace-nowrap">
+                              {new Date(event.ts).toLocaleTimeString()}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-            
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
                 {insightOpen && (
                   <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
@@ -289,7 +289,14 @@ export function TraceList({
                             <span className={`text-xs px-2 py-0.5 rounded ...`}>
                               {insight.severity}
                             </span>
-
+                            <button
+                              type="button"
+                              onClick={() => onRegenerateInsight(g.traceId)}
+                              className="text-xs px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                              title="Recompute insight for this trace"
+                            >
+                              Regenerate
+                            </button>
                             <button
                               type="button"
                               onClick={() =>

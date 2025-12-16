@@ -398,6 +398,29 @@ export default function App() {
     }
   };
 
+  const regenerateInsight = async (traceId: string) => {
+    try {
+      // show loading state for this trace (optional but nice)
+      setInsightMap((m) => ({ ...m, [traceId]: null }));
+
+      const res = await fetch(
+        `${API_BASE}/api/insights/${traceId}/regenerate`,
+        {
+          method: "POST"
+        }
+      );
+      const json: { ok: boolean; insight?: any } = await res.json();
+
+      if (!json.ok || !json.insight) throw new Error("regenerate failed");
+
+      setInsightMap((m) => ({ ...m, [traceId]: json.insight }));
+      setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
+    } catch (err) {
+      console.error("[Dashboard] failed to regenerate insight", err);
+      alert("Failed to regenerate insight.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -481,6 +504,7 @@ export default function App() {
           insightMap={insightMap}
           insightOpenMap={insightOpenMap}
           setInsightOpenMap={setInsightOpenMap}
+          onRegenerateInsight={regenerateInsight}
         />
       </main>
     </div>

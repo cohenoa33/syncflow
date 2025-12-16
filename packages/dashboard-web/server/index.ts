@@ -248,6 +248,7 @@ app.get("/api/traces", async (_req, res) => {
 // Clear everything
 app.delete("/api/traces", async (_req, res) => {
   await EventModel.deleteMany({});
+  await InsightModel.deleteMany({});
   events.length = 0;
 
   io.emit("eventHistory", []); // 🔥 force-clear all dashboards
@@ -312,6 +313,14 @@ app.post("/api/demo-seed", async (req, res) => {
       .sort({ ts: 1 })
       .lean();
 
+    if (traceEvents.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "TRACE_NOT_FOUND",
+        message: `No events found for traceId=${traceId}`
+      });
+    }
+
     const insight = buildInsightForTrace(traceId, traceEvents as any);
 
     // 3) upsert cache
@@ -332,10 +341,15 @@ app.post("/api/insights/:traceId/regenerate", async (req, res) => {
   try {
     const traceId = req.params.traceId;
 
-    const traceEvents = await EventModel.find({ traceId })
-      .sort({ ts: 1 })
-      .lean();
+const traceEvents = await EventModel.find({ traceId }).sort({ ts: 1 }).lean();
 
+if (traceEvents.length === 0) {
+  return res.status(404).json({
+    ok: false,
+    error: "TRACE_NOT_FOUND",
+    message: `No events found for traceId=${traceId}`
+  });
+}
     const insight = buildInsightForTrace(traceId, traceEvents as any);
 
     await InsightModel.updateOne(
