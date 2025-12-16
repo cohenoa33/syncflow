@@ -19,6 +19,7 @@ type Props = {
   toggleInsight: (traceId: string) => void;
   insightMap: Record<string, any>;
   insightOpenMap: Record<string, boolean>;
+  setInsightOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 };
 
 export function TraceList({
@@ -34,7 +35,9 @@ export function TraceList({
   onToggleAllPayloads,
   onToggleAppFromTrace,
   toggleInsight,
-  insightOpenMap, insightMap
+  insightOpenMap,
+  insightMap,
+  setInsightOpenMap
 }: Props) {
   const getTypeBadgeClasses = (type: Event["type"]) =>
     type === "express"
@@ -89,8 +92,9 @@ export function TraceList({
         <div className="divide-y divide-gray-200">
           {filteredTraceGroups.map((g) => {
             const traceOpen = traceOpenMap[g.traceId] ?? true;
-        const insightOpen = !!insightOpenMap[g.traceId];
-        const insight = insightMap[g.traceId];
+            const insightOpen = !!insightOpenMap[g.traceId];
+            const insight = insightMap[g.traceId];
+
             return (
               <div key={g.traceId} className="p-4">
                 <button
@@ -130,50 +134,49 @@ export function TraceList({
                       </span>
                     )}
                   </div>
+                  <div className="flex items-center justify-end gap-0.5">
+                    {(g.statusCode != null || g.slow || g.hasError) && (
+                      <span className="inline-flex items-center gap-0.5">
+                        {g.statusCode != null && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              g.ok
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-rose-100 text-rose-800"
+                            }`}
+                          >
+                            {g.statusCode}
+                          </span>
+                        )}
 
-                  {(g.statusCode != null || g.slow || g.hasError) && (
-                    <span className="inline-flex items-center gap-1">
-                      {g.statusCode != null && (
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            g.ok
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-rose-100 text-rose-800"
-                          }`}
-                        >
-                          {g.statusCode}
-                        </span>
-                      )}
+                        {g.hasError && (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                            error
+                          </span>
+                        )}
 
-                      {g.hasError && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
-                          error
-                        </span>
-                      )}
-
-                      {g.slow && !g.hasError && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                          slow
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleInsight(g.traceId);
-                    }}
-                    className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  >
-                    AI Insight
-                  </button>
-
-                  <div className="text-xs text-gray-500">
-                    {traceOpen ? "Collapse" : "Expand"}
+                        {g.slow && !g.hasError && (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                            slow
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleInsight(g.traceId);
+                      }}
+                      className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    >
+                      {insightOpen ? "Close Insight" : "AI Insight"}
+                    </button>
+                    <div className="text-xs text-gray-500">
+                      {traceOpen ? "Collapse" : "Expand"}
+                    </div>
                   </div>
                 </button>
-
                 {traceOpen && (
                   <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
                     <div className="divide-y divide-gray-200">
@@ -182,10 +185,7 @@ export function TraceList({
                         const isCopied = copiedId === event.id;
 
                         return (
-                          <div
-                            key={event.id}
-                            className="p-3 hover:bg-gray-50 transition-colors"
-                          >
+                          <div key={event.id} className="p-3 transition-colors">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -244,6 +244,21 @@ export function TraceList({
                               <div className="text-xs text-gray-500 whitespace-nowrap">
                                 {new Date(event.ts).toLocaleTimeString()}
                               </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation(); // don’t bubble to parent containers
+                                  onToggleTrace(g.traceId); // collapse/expand this trace
+                                }}
+                                className="ml-auto text-xs text-gray-500 hover:text-gray-900"
+                                aria-label={
+                                  traceOpen ? "Collapse trace" : "Expand trace"
+                                }
+                                title={traceOpen ? "Collapse" : "Expand"}
+                              >
+                                ✕
+                              </button>
                             </div>
                           </div>
                         );
@@ -252,63 +267,75 @@ export function TraceList({
                   </div>
                 )}
                 {insightOpen && (
-                  <div className="mx-3 mt-3 mb-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
                     {!insight ? (
                       <div className="text-sm text-gray-500">
                         Generating insight…
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">Insight</span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded ${
-                              insight.severity === "error"
-                                ? "bg-rose-100 text-rose-800"
-                                : insight.severity === "warn"
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-emerald-100 text-emerald-800"
-                            }`}
-                          >
-                            {insight.severity}
-                          </span>
-                        </div>
+                      <div className="rounded-lg bg-gray-50 p-3 ">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">
+                              Insight
+                            </span>
 
-                        <div className="text-sm text-gray-900">
-                          {insight.summary}
-                        </div>
+                            <span className={`text-xs px-2 py-0.5 rounded ...`}>
+                              {insight.severity}
+                            </span>
 
-                        {insight.rootCause && (
-                          <div className="text-sm text-gray-700">
-                            <span className="font-medium">Root cause:</span>{" "}
-                            {insight.rootCause}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setInsightOpenMap((m) => ({
+                                  ...m,
+                                  [g.traceId]: false
+                                }))
+                              }
+                              className="ml-auto text-xs text-gray-500 hover:text-gray-900"
+                              aria-label="Close insight"
+                              title="Close"
+                            >
+                              ✕
+                            </button>
                           </div>
-                        )}
 
-                        {Array.isArray(insight.signals) &&
-                          insight.signals.length > 0 && (
-                            <ul className="text-xs text-gray-600 list-disc pl-5">
-                              {insight.signals.map((s: any, idx: number) => (
-                                <li key={idx}>{s.message}</li>
-                              ))}
-                            </ul>
-                          )}
+                          <div className="text-sm text-gray-900">
+                            {insight.summary}
+                          </div>
 
-                        {Array.isArray(insight.suggestions) &&
-                          insight.suggestions.length > 0 && (
-                            <div>
-                              <div className="text-xs font-semibold text-gray-700 mb-1">
-                                Suggestions
-                              </div>
-                              <ul className="text-xs text-gray-600 list-disc pl-5">
-                                {insight.suggestions.map(
-                                  (s: string, idx: number) => (
-                                    <li key={idx}>{s}</li>
-                                  )
-                                )}
-                              </ul>
+                          {insight.rootCause && (
+                            <div className="text-sm text-gray-700">
+                              <span className="font-medium">Root cause:</span>{" "}
+                              {insight.rootCause}
                             </div>
                           )}
+
+                          {Array.isArray(insight.signals) &&
+                            insight.signals.length > 0 && (
+                              <ul className="text-xs text-gray-600 list-disc pl-5">
+                                {insight.signals.map((s: any, idx: number) => (
+                                  <li key={idx}>{s.message}</li>
+                                ))}
+                              </ul>
+                            )}
+
+                          {Array.isArray(insight.suggestions) &&
+                            insight.suggestions.length > 0 && (
+                              <div>
+                                <div className="text-xs font-semibold text-gray-700 mb-1">
+                                  Suggestions
+                                </div>
+                                <ul className="text-xs text-gray-600 list-disc pl-5">
+                                  {insight.suggestions.map(
+                                    (s: string, idx: number) => (
+                                      <li key={idx}>{s}</li>
+                                    )
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
                       </div>
                     )}
                   </div>

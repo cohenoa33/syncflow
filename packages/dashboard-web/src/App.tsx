@@ -216,6 +216,11 @@ export default function App() {
         for (const e of g.events) next[e.id] = false;
       return { ...m, ...next };
     });
+      setTraceOpenMap((m) => {
+        const next: Record<string, boolean> = {};
+        for (const g of filteredTraceGroups) next[g.traceId] = false;
+        return { ...m, ...next };
+      });
   };
 
   const anyPayloadClosed = filteredTraceGroups.some((g) =>
@@ -475,6 +480,7 @@ export default function App() {
           toggleInsight={toggleInsight}
           insightMap={insightMap}
           insightOpenMap={insightOpenMap}
+          setInsightOpenMap={setInsightOpenMap}
         />
       </main>
     </div>

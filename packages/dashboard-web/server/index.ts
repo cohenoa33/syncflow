@@ -36,6 +36,16 @@ const EventSchema = new mongoose.Schema(
 );
 
 const EventModel = mongoose.model("SyncFlowEvent", EventSchema);
+const InsightSchema = new mongoose.Schema(
+  {
+    traceId: { type: String, required: true, unique: true, index: true },
+    insight: mongoose.Schema.Types.Mixed,
+    computedAt: { type: Number, required: true, index: true }
+  },
+  { timestamps: true }
+);
+
+const InsightModel = mongoose.model("SyncFlowInsight", InsightSchema);
 
 /* -----------------------------
    Helpers
@@ -282,7 +292,43 @@ app.post("/api/demo-seed", async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
-app.get("/api/insights/:traceId", async (req, res) => {
+  const INSIGHT_TTL_MS = 1000 * 60 * 60; // 1 hour 
+
+  app.get("/api/insights/:traceId", async (req, res) => {
+  try {
+    const traceId = req.params.traceId;
+
+    // 1) try cache
+    const cached = await InsightModel.findOne({ traceId }).lean();
+    const fresh =
+      cached?.computedAt && Date.now() - cached.computedAt < INSIGHT_TTL_MS;
+
+    if (cached?.insight && fresh) {
+      return res.json({ ok: true, insight: cached.insight, cached: true });
+    }
+
+    // 2) compute (from events)
+    const traceEvents = await EventModel.find({ traceId })
+      .sort({ ts: 1 })
+      .lean();
+
+    const insight = buildInsightForTrace(traceId, traceEvents as any);
+
+    // 3) upsert cache
+    await InsightModel.updateOne(
+      { traceId },
+      { $set: { traceId, insight, computedAt: Date.now() } },
+      { upsert: true }
+    );
+
+    return res.json({ ok: true, insight, cached: false });
+  } catch (err) {
+    console.error("[Dashboard] Failed to build insight", err);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post("/api/insights/:traceId/regenerate", async (req, res) => {
   try {
     const traceId = req.params.traceId;
 
@@ -291,13 +337,19 @@ app.get("/api/insights/:traceId", async (req, res) => {
       .lean();
 
     const insight = buildInsightForTrace(traceId, traceEvents as any);
+
+    await InsightModel.updateOne(
+      { traceId },
+      { $set: { traceId, insight, computedAt: Date.now() } },
+      { upsert: true }
+    );
+
     res.json({ ok: true, insight });
   } catch (err) {
-    console.error("[Dashboard] Failed to build insight", err);
+    console.error("[Dashboard] Failed to regenerate insight", err);
     res.status(500).json({ ok: false });
   }
 });
-
 /* -----------------------------
    Static UI (production)
 ----------------------------- */
