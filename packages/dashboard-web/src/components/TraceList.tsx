@@ -175,11 +175,30 @@ export function TraceList({
                     <div className="text-xs text-gray-500">
                       {traceOpen ? "Collapse" : "Expand"}
                     </div>
+              
                   </div>
                 </button>
-                {traceOpen && (
-                  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
-                    <div className="divide-y divide-gray-200">
+               {traceOpen && (
+  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden bg-white">
+    {/* Trace-body header row */}
+    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+      <div className="text-xs font-medium text-gray-700">
+        Events ({g.events.length})
+      </div>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleTrace(g.traceId);
+        }}
+        className="text-xs text-gray-500 hover:text-gray-900"
+        aria-label="Collapse trace"
+        title="Collapse"
+      >
+        ✕
+      </button>
+    </div>
                       {g.events.map((event) => {
                         const isOpen = !!openMap[event.id];
                         const isCopied = copiedId === event.id;
@@ -245,26 +264,13 @@ export function TraceList({
                                 {new Date(event.ts).toLocaleTimeString()}
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation(); // don’t bubble to parent containers
-                                  onToggleTrace(g.traceId); // collapse/expand this trace
-                                }}
-                                className="ml-auto text-xs text-gray-500 hover:text-gray-900"
-                                aria-label={
-                                  traceOpen ? "Collapse trace" : "Expand trace"
-                                }
-                                title={traceOpen ? "Collapse" : "Expand"}
-                              >
-                                ✕
-                              </button>
+                          
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
+            
                 )}
                 {insightOpen && (
                   <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
