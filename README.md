@@ -77,7 +77,8 @@ curl -X POST http://localhost:4000/api/users \
 curl http://localhost:4000/api/users
 ```
 
-Open the dashboard and you’ll see live traces + DB operations.
+Open the dashboard and you’ll see live traces + DB operations. 
+>Demo Mode seeds traces for multiple apps (to test app filtering).
 
 ### Multi-app demo (optional)
 
