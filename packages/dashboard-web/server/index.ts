@@ -5,6 +5,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
+import { buildInsightForTrace } from "./insights";
 
 /* -----------------------------
    Mongo
@@ -278,6 +279,21 @@ app.post("/api/demo-seed", async (req, res) => {
     res.json({ ok: true, count: all.length, traceIdsByApp });
   } catch (err) {
     console.error("[Dashboard] Failed to seed demo traces", err);
+    res.status(500).json({ ok: false });
+  }
+});
+app.get("/api/insights/:traceId", async (req, res) => {
+  try {
+    const traceId = req.params.traceId;
+
+    const traceEvents = await EventModel.find({ traceId })
+      .sort({ ts: 1 })
+      .lean();
+
+    const insight = buildInsightForTrace(traceId, traceEvents as any);
+    res.json({ ok: true, insight });
+  } catch (err) {
+    console.error("[Dashboard] Failed to build insight", err);
     res.status(500).json({ ok: false });
   }
 });

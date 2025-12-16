@@ -21,7 +21,7 @@ export default function App() {
     "all" | "express" | "mongoose" | "error"
   >("all");
 
-  // ✅ App selection model
+
   const [allAppsSelected, setAllAppsSelected] = useState(true);
   const [selectedApps, setSelectedApps] = useState<Set<string>>(new Set());
 
@@ -34,6 +34,11 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [showSlowOnly, setShowSlowOnly] = useState(false);
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+
+  const [insightMap, setInsightMap] = useState<Record<string, any>>({});
+  const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
+    {}
+  );
 
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
@@ -112,7 +117,7 @@ export default function App() {
     });
   }, [appOptions, allAppsSelected]);
 
-  // ----- Step 11 selection logic -----
+
   const toggleApp = (appName: string) => {
     // "ALL" -> first unselect becomes "all except clicked"
     if (allAppsSelected) {
@@ -369,6 +374,25 @@ export default function App() {
     }
   };
 
+  const toggleInsight = async (traceId: string) => {
+    setInsightOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
+
+    // fetch once
+    if (insightMap[traceId]) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
+      );
+      const json = await res.json();
+      if (json?.ok && json.insight) {
+        setInsightMap((m) => ({ ...m, [traceId]: json.insight }));
+      }
+    } catch (e) {
+      console.error("Failed to load insight", e);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -448,6 +472,9 @@ export default function App() {
             anyPayloadClosed ? expandAllPayloads() : collapseAllPayloads()
           }
           onToggleAppFromTrace={(appName) => toggleApp(appName)}
+          toggleInsight={toggleInsight}
+          insightMap={insightMap}
+          insightOpenMap={insightOpenMap}
         />
       </main>
     </div>
