@@ -95,6 +95,9 @@ Open the dashboard and you’ll see live traces + DB operations.
 
 3. **Dashboard UI (packages/dashboard-web)**  
    A Vite React + Tailwind dashboard (port **5173**) that shows incoming events in real time.
+- Componentized UI (`packages/dashboard-web/src/components`)
+- Shared config + helpers (`packages/dashboard-web/src/lib`)
+- App filtering via multi-select app chips (no dropdown)
 
 4. **Sample MERN App (examples/mern-sample-app)**  
    A minimal Express + Mongoose backend using the agent to demonstrate automatic event streaming.

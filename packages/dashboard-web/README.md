@@ -42,20 +42,19 @@ This compiles the TypeScript server and builds the React frontend for production
 
 ## Architecture
 
-**Frontend (port 5173)**
+### Frontend (port 5173)
 - Vite + React + TypeScript + Tailwind v4
-- Live traces grouped by traceId
+- UI components live under `src/components`
+- Shared helpers/config live under `src/lib`
+- Live traces grouped by `traceId`
 - Collapsible per-trace timelines (Express + Mongoose events)
 - Status / slow / error badges in the trace header
 - Search box (route, model, payload text, app name)
-- Filters:
-- All / Express / Mongoose / Error
-- “Slow only”
-- “Errors only”
+- **Filters**: All / Express / Mongoose / Error / Slow only / Errors only / **By app (multi-select chips)**
 - Export **currently filtered** traces to a JSON file
 - Keyboard shortcuts:
-- E — toggle latest event payload
-- Shift+E — expand/collapse all payloads
+  - `E` — toggle latest event payload
+  - `Shift+E` — expand/collapse all payloads
 
 **Backend (port 5050)**
 - Express + Socket.IO server
