@@ -34,6 +34,7 @@ app.get("/notes", async (_req, res) => {
 
 app.post("/notes", async (req, res) => {
   const note = await Note.create({ text: req.body.text });
+
   res.json(note);
 });
 

@@ -26,6 +26,7 @@ syncflow/
 ### Terminal 1: Install Dependencies
 ```bash
 pnpm install
+```
 
 ### Terminal 1: Start MongoDB (Docker)
 If you haven't created the container yet:
@@ -78,6 +79,30 @@ curl http://localhost:4000/api/users
 
 Open the dashboard and you’ll see live traces + DB operations.
 
+### Multi-app demo (optional)
+
+SyncFlow supports multiple instrumented apps sending traces to the same dashboard.
+
+1) Start a second sample app (for example `examples/mern-sample-app-2`) on port **4001** with:
+- `appName: "mern-sample-app-2"`
+- DB: `syncflow-demo-2` (or any other local DB)
+
+2) Trigger events on both apps:
+
+App A (4000):
+```bash
+curl -X POST http://localhost:4000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"AppA","email":"appa+'$(date +%s)'@test.com"}'
+```
+App B (4001):
+```bash
+curl -X POST http://localhost:4001/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"AppB","email":"appb+'$(date +%s)'@test.com"}'
+```
+3)	In the dashboard, use the Applications chips to filter traces by app.
+
 ## 📖 How It Works (Current MVP)
 
 1. **Agent (packages/agent-node)**  
@@ -101,6 +126,8 @@ Open the dashboard and you’ll see live traces + DB operations.
 
 4. **Sample MERN App (examples/mern-sample-app)**  
    A minimal Express + Mongoose backend using the agent to demonstrate automatic event streaming.
+
+   
 
 
 ## 🛠️ Development Scripts

@@ -296,9 +296,19 @@ export default function App() {
       setOpenMap({});
       setTraceOpenMap({});
 
-      const res = await fetch(`${API_BASE}/api/demo-seed`, { method: "POST" });
-      const json: { ok: boolean; count: number; traceIds?: string[] } =
-        await res.json();
+      const res = await fetch(`${API_BASE}/api/demo-seed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apps: ["mern-sample-app", "mern-sample-app-2"]
+        })
+      });
+
+      const json: {
+        ok: boolean;
+        count: number;
+        traceIdsByApp?: Record<string, string[]>;
+      } = await res.json();
 
       const eventsRes = await fetch(`${API_BASE}/api/traces`);
       const data: Event[] = await eventsRes.json();
@@ -313,7 +323,11 @@ export default function App() {
         if (!(key in initialTraceOpen)) initialTraceOpen[key] = false;
       }
 
-      const newestTraceId = json.traceIds?.[json.traceIds.length - 1];
+      const allTraceIds = Object.values(json.traceIdsByApp ?? {}).flat();
+      const newestTraceId = allTraceIds.length
+        ? allTraceIds[allTraceIds.length - 1]
+        : undefined;
+
       if (newestTraceId) initialTraceOpen[newestTraceId] = true;
 
       if (newestTraceId) {

@@ -60,9 +60,7 @@ function nowMinus(ms: number) {
    Demo seed
 ----------------------------- */
 
-function generateDemoTraces() {
-  const appName = "mern-sample-app";
-
+function generateDemoTraces(appName: string) {
   const t1 = makeTraceId();
   const t2 = makeTraceId();
   const t3 = makeTraceId();
@@ -248,21 +246,40 @@ app.delete("/api/traces", async (_req, res) => {
 });
 
 // Demo seed (manual)
-app.post("/api/demo-seed", async (_req, res) => {
-  const seeded = generateDemoTraces();
+app.post("/api/demo-seed", async (req, res) => {
+  try {
+    const apps =
+      Array.isArray(req.body?.apps) && req.body.apps.length > 0
+        ? req.body.apps
+        : ["mern-sample-app"];
 
-  await EventModel.insertMany(seeded);
+    const all: any[] = [];
+    const traceIdsByApp: Record<string, string[]> = {};
 
-  for (const e of seeded) {
-    events.push(e);
-    io.emit("event", e);
+    for (const appName of apps) {
+      const seeded = generateDemoTraces(appName);
+      all.push(...seeded);
+      traceIdsByApp[appName] = Array.from(
+        new Set(seeded.map((e) => e.traceId).filter(Boolean))
+      );
+    }
+
+    // 1) persist
+    await EventModel.insertMany(all);
+
+    // 2) in-memory buffer
+    for (const e of all) events.push(e);
+    while (events.length > 1000) events.shift();
+
+    // 3) broadcast
+    for (const e of all) io.emit("event", e);
+
+    console.log(`[Dashboard] Seeded demo traces: ${all.length} events`);
+    res.json({ ok: true, count: all.length, traceIdsByApp });
+  } catch (err) {
+    console.error("[Dashboard] Failed to seed demo traces", err);
+    res.status(500).json({ ok: false });
   }
-
-  const traceIds = Array.from(
-    new Set(seeded.map((e) => e.traceId).filter(Boolean))
-  );
-
-  res.json({ ok: true, count: seeded.length, traceIds });
 });
 
 /* -----------------------------
