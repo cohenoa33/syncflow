@@ -1,3 +1,9 @@
+// packages/dashboard-web/server/index.ts
+import dotenv from "dotenv";
+
+dotenv.config({
+  path: process.env.NODE_ENV === "production" ? ".env" : ".env.local"
+});
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -6,6 +12,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import { buildInsightForTrace } from "./insights";
+
 
 /* -----------------------------
    Mongo
@@ -382,5 +389,10 @@ app.get("*", (_req, res) => {
 const PORT = Number(process.env.PORT || 5050);
 
 httpServer.listen(PORT, () => {
+  console.log(
+    "[AI]",
+    process.env.OPENAI_API_KEY ? "API key loaded" : "API key MISSING"
+  );
+
   console.log(`[Dashboard] running on port ${PORT}`);
 });

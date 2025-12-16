@@ -1,3 +1,5 @@
+// packages/dashboard-web/server/insights.ts
+
 export type Insight = {
   traceId: string;
   appName?: string;
