@@ -1,6 +1,6 @@
 # 🔄 SyncFlow
 
-SyncFlow is an AI-powered full-stack dev assistant for MERN apps. It streams real-time backend/DB events to a React dashboard, traces errors across layers, and will add automated test generation + performance insights to help devs debug faster and ship with confidence.
+SyncFlow is an AI-powered full-stack dev assistant for MERN apps. It streams real-time backend/DB events to a React dashboard, traces errors across layers, and includes **AI Insights** to help devs debug faster and ship with confidence.
 
 ## 📦 Monorepo Structure
 
@@ -8,20 +8,25 @@ SyncFlow is an AI-powered full-stack dev assistant for MERN apps. It streams rea
 syncflow/
 ├── packages/
 │   ├── agent-node/          # TypeScript agent for MERN apps
-│   └── dashboard-web/       # React dashboard + Socket.IO server
+│   └── dashboard-web/       # React dashboard + Socket.IO server + API
 ├── examples/
-│   └── mern-sample-app/     # Demo backend using the agent
+│   └── mern-sample-app/     # Demo backend using the agent (port 4000)
+│   └── mern-sample-app/     # Demo backend using the agent (port 4001)
 ├── pnpm-workspace.yaml      # pnpm workspace configuration
 └── package.json             # Root package with scripts
 ```
-
 ## 🚀 Quick Start (4 Terminals)
 
 ### Prerequisites
 - Node.js 18+ and pnpm installed (`npm install -g pnpm`)
 - **MongoDB running locally** on port `27017`
   - Dashboard DB: `syncflow-dashboard`
-  - Sample app DB: `syncflow-demo`
+  - Sample app DBs: `syncflow-demo`, `syncflow-demo-2`
+
+### Terminal 1: Install Dependencies
+```bash
+pnpm install
+```
 
 ### Terminal 1: Install Dependencies
 ```bash
@@ -44,11 +49,11 @@ pnpm -C packages/agent-node build
 cd packages/dashboard-web
 pnpm dev:server
 ```
-- Socket.IO server: http://localhost:5050
+- Server (Socket + API): http://localhost:5050
+
   
 ### Terminal 3: Start SyncFlow Dashboard UI
 ```bash
-pnpm -C packages/dashboard-web dev
 cd packages/dashboard-web
 pnpm dev
 ```
@@ -59,50 +64,70 @@ pnpm dev
 - Persisted traces API: http://localhost:5050/api/traces
 
 
-### Terminal 4: Start Sample MERN App
+### Terminal 4: Start Sample MERN App(s)
+App 1 (port 4000):
 ```bash
-pnpm -C examples/mern-sample-app dev
 cd examples/mern-sample-app
 pnpm dev
 ```
-#### Port
-- Sample API: http://localhost:4000
 
-#### Trigger events: 
-```bash 
-curl -X POST http://localhost:4000/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"[NAME]","email":"[NAME]+'$(date +%s)'@test.com"}'
-
-curl http://localhost:4000/api/users
+App 2 (port 4001) (optional but recommended for multi-app testing):
+```bash
+cd examples/mern-sample-app-2
+pnpm dev
 ```
 
-Open the dashboard and you’ll see live traces + DB operations. 
->Demo Mode seeds traces for multiple apps (to test app filtering).
-
-### Multi-app demo (optional)
-
-SyncFlow supports multiple instrumented apps sending traces to the same dashboard.
-
-1) Start a second sample app (for example `examples/mern-sample-app-2`) on port **4001** with:
-- `appName: "mern-sample-app-2"`
-- DB: `syncflow-demo-2` (or any other local DB)
-
-2) Trigger events on both apps:
-
-App A (4000):
+### Trigger events
+App 1:
 ```bash
 curl -X POST http://localhost:4000/api/users \
   -H "Content-Type: application/json" \
   -d '{"name":"AppA","email":"appa+'$(date +%s)'@test.com"}'
+
+curl http://localhost:4000/api/users
 ```
-App B (4001):
+
+App 2:
 ```bash
 curl -X POST http://localhost:4001/api/users \
   -H "Content-Type: application/json" \
   -d '{"name":"AppB","email":"appb+'$(date +%s)'@test.com"}'
+
+curl http://localhost:4001/api/users
 ```
-3)	In the dashboard, use the Applications chips to filter traces by app.
+
+Open the dashboard and you’ll see live traces + DB operations.
+
+
+### Demo Mode (multi-app seed)
+
+The Dashboard has a **Demo Mode** button that:
+	1.	Clears stored traces
+	2.	Seeds demo traces for **multiple apps**
+	3.	Lets you test **app filtering** quickly (without running both sample apps)
+
+
+## 🤖 AI Insights (server-powered)
+
+The dashboard can generate AI Insights per trace using the server API.
+### Local setup
+Create packages/dashboard-web/.env.local:
+```env
+OPENAI_API_KEY=your_key_here
+ENABLE_AI_INSIGHTS=true
+INSIGHT_MODEL=gpt-5.2
+```
+### Production setup (Render)
+Set environment variables in Render:
+- OPENAI_API_KEY
+- ENABLE_AI_INSIGHTS=true
+- INSIGHT_MODEL=gpt-5.2
+
+Notes:
+
+- Insights are cached in MongoDB with a TTL-style freshness window (server-side).
+- The UI supports Regenerate to force recomputation.
+
 
 ## 📖 How It Works (Current MVP)
 
@@ -116,17 +141,20 @@ curl -X POST http://localhost:4001/api/users \
    - Events are labeled `info` by default and upgrade to `warn` if duration exceeds the agent’s `slowMsThreshold` (default 500ms).
 
 
-2. **WebSocket Server (packages/dashboard-web/server)**  
-   A tiny Socket.IO server (port **5050**) that receives events from agents and broadcasts them to any open dashboards.
-
-3. **Dashboard UI (packages/dashboard-web)**  
-   A Vite React + Tailwind dashboard (port **5173**) that shows incoming events in real time.
-- Componentized UI (`packages/dashboard-web/src/components`)
-- Shared config + helpers (`packages/dashboard-web/src/lib`)
-- App filtering via multi-select app chips (no dropdown)
-
-4. **Sample MERN App (examples/mern-sample-app)**  
-   A minimal Express + Mongoose backend using the agent to demonstrate automatic event streaming.
+2. **WebSocket/API Server (packages/dashboard-web/server)**  
+Socket.IO server + REST API (port **5050**) that receives events from agents, persists them to MongoDB, and broadcasts updates to connected dashboards.
+3. **	Dashboard UI (packages/dashboard-web)** 
+A Vite React + Tailwind dashboard (port 5173) that shows incoming events in real time.
+	- Componentized UI (packages/dashboard-web/src/components)
+	- Shared config + helpers (packages/dashboard-web/src/lib)
+	- App filtering via **multi-select app chips** (no dropdown)
+	  - Default: **All apps selected**
+	  - First click when “All” is active switches into “all except clicked”
+	  - If no apps are selected, traces view is empty
+	- AI Insights per trace via server endpoints (with Regenerate)
+  
+4. **Sample MERN Apps (examples/mern-sample-app, examples/mern-sample-app-2)**  
+Minimal Express + Mongoose backends using the agent to demonstrate automatic event streaming.
 
    
 
@@ -159,16 +187,16 @@ pnpm clean
 ## 📚 Package Documentation
 
 - [Agent Node](./packages/agent-node/README.md) - TypeScript agent for MERN apps
-- [Dashboard Web](./packages/dashboard-web/README.md) - React dashboard + Socket.IO server
-- [MERN Sample App](./examples/mern-sample-app/README.md) - Demo backend
+- [Dashboard Web](./packages/dashboard-web/README.md) -  React dashboard + Socket.IO server + API
+- [MERN Sample App](./examples/mern-sample-app/README.md) - Demo backend (port 4000)
+- [MERN Sample App 2](./examples/mern-sample-app-2/README.md) - Demo backend (port 4001)
 
 # ✅ What’s Implemented (so far)
-
 ### Agent
 - Auto-instruments Express requests
 - Auto-instruments Mongoose ops via global plugin
 - Rich payloads: request/response + DB context
-- Event levels (`info` / `warn` / `error`)
+- Event levels `(info / warn / error)`
 - Automatic sanitization of sensitive fields
 - **Trace correlation** across Express → Mongoose using `traceId`
 
@@ -179,42 +207,48 @@ pnpm clean
 - Status / slow / error badges per trace
 - Search + filters (Slow only / Errors only)
 - Export filtered traces to JSON
-- **Mongo persistence** of events + REST API
+- ** Mongo persistence** of events + REST API
+- **AI Insights** per trace (server-powered)
+  - Cached in MongoDB
+  - Regenerate supported
+
+
+
+
+
 
 ## 🗺️ Roadmap
 
 ### ✅ Phase 1: Core Infrastructure
-- [x] Monorepo setup with pnpm workspaces
-- [x] TypeScript agent package with Socket.IO client
-- [x] React dashboard (Vite + TS + Tailwind v4)
-- [x] Socket.IO server on port 5050
-- [x] Express auto-instrumentation
-- [x] Mongoose hooks for DB event capture
-- [x] Sample MERN app demonstrating integration
+- Monorepo setup with pnpm workspaces
+- TypeScript agent package with Socket.IO client
+- React dashboard (Vite + TS + Tailwind v4)
+- Socket.IO server on port 5050
+- Express auto-instrumentation
+- Mongoose hooks for DB event capture
+- Sample MERN apps demonstrating integration (multi-app)
 
 ### ✅ Phase 2: Enhanced Monitoring
-- [x] Rich request/response + DB payloads
-- [x] Event levels + slow request detection
-- [x] Trace correlation (traceId)
-- [x] Trace grouping UI
-- [x] Search / filters
-- [x] Export JSON
-- [x] Trace persistence (MongoDB)
+- Rich request/response + DB payloads
+- Event levels + slow request detection
+- Trace correlation (traceId)
+- Trace grouping UI
+- Search / filters
+- Export JSON
+- Trace persistence (MongoDB)
 
-### 🔮 Phase 3: AI-Powered Features (Planned)
-- [ ] Automated test generation from captured traces
-- [ ] AI-powered error analysis and suggestions
-- [ ] Performance bottleneck detection + recommendations
-- [ ] Anomaly detection in request patterns
-- [ ] Code generation for fixing common issues
-- [ ] Integration with VS Code extension
+### ✅ Phase 3: AI Insights (In Progress)
+- Server-powered AI insights per trace
+- Cached insights + regenerate endpoint
+- Better model/tooling prompts & structured output validation
+- Rate limiting + sampling for production safety
 
 ### 🎯 Phase 4: Production Ready (Future)
-- [ ] Authentication and multi-tenant support
-- [ ] Distributed tracing for microservices
-- [ ] Historical metrics dashboards
-- [ ] Alerting and notifications
-- [ ] Production-safe sampling and rate limiting
+- Authentication and multi-tenant support
+- Distributed tracing for microservices
+- Historical metrics dashboards
+- Alerting and notifications
+- Production-safe sampling and rate limiting
 
 
 ## 🤝 Contributing

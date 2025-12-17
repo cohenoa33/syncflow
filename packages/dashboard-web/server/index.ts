@@ -1,17 +1,12 @@
 // packages/dashboard-web/server/index.ts
-import dotenv from "dotenv";
-
-dotenv.config({
-  path: process.env.NODE_ENV === "production" ? ".env" : ".env.local"
-});
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import { buildInsightForTrace } from "./insights";
+import path from "path";
 
 
 /* -----------------------------
@@ -328,7 +323,7 @@ app.post("/api/demo-seed", async (req, res) => {
       });
     }
 
-    const insight = buildInsightForTrace(traceId, traceEvents as any);
+const insight = await buildInsightForTrace(traceId, traceEvents as any);
 
     // 3) upsert cache
     await InsightModel.updateOne(
@@ -357,7 +352,7 @@ if (traceEvents.length === 0) {
     message: `No events found for traceId=${traceId}`
   });
 }
-    const insight = buildInsightForTrace(traceId, traceEvents as any);
+const insight = await buildInsightForTrace(traceId, traceEvents as any);
 
     await InsightModel.updateOne(
       { traceId },
@@ -389,10 +384,7 @@ app.get("*", (_req, res) => {
 const PORT = Number(process.env.PORT || 5050);
 
 httpServer.listen(PORT, () => {
-  console.log(
-    "[AI]",
-    process.env.OPENAI_API_KEY ? "API key loaded" : "API key MISSING"
-  );
+
 
   console.log(`[Dashboard] running on port ${PORT}`);
 });

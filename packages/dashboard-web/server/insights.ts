@@ -28,7 +28,7 @@ type Event = {
   payload: Record<string, any>;
 };
 
-export function buildInsightForTrace(
+export function buildHeuristicInsightForTrace(
   traceId: string,
   events: Event[]
 ): Insight {
@@ -171,4 +171,148 @@ export function buildInsightForTrace(
     suggestions,
     signals
   };
+}
+import OpenAI from "openai";
+
+let _openai: OpenAI | null = null;
+
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is missing. Set it in packages/dashboard-web/.env.local (dev) or Render env vars (prod)."
+    );
+  }
+
+  if (!_openai) _openai = new OpenAI({ apiKey });
+  return _openai;
+}
+
+
+
+function summarizeEventsForLLM(events: Event[]) {
+  return events
+    .slice()
+    .sort((a, b) => a.ts - b.ts)
+    .map((e) => ({
+      ts: e.ts,
+      appName: e.appName,
+      type: e.type,
+      level: e.level,
+      operation: e.operation,
+      durationMs: e.durationMs,
+      // keep payload small + relevant
+      payload: {
+        response: e.payload?.response,
+        error: e.payload?.error,
+        modelName: e.payload?.modelName,
+        operation: e.payload?.operation
+      }
+    }));
+}
+async function buildAIInsightForTrace(
+  traceId: string,
+  events: Event[]
+): Promise<Insight> {
+
+  const INSIGHT_MODEL = process.env.INSIGHT_MODEL || "gpt-5.2";
+
+  const openai = getOpenAI();
+  const ordered = [...events].sort((a, b) => a.ts - b.ts);
+  const expressEvt = ordered.find((e) => e.type === "express");
+  const appName = expressEvt?.appName ?? ordered[0]?.appName;
+  const headerOp = expressEvt?.operation ?? ordered[0]?.operation ?? "Trace";
+
+  const traceSummary = summarizeEventsForLLM(ordered);
+
+  const system = `
+You are SyncFlow Insight, a debugging assistant for MERN traces.
+Return ONLY valid JSON matching this TypeScript type:
+
+{
+  "traceId": string,
+  "appName"?: string,
+  "headerOp"?: string,
+  "summary": string,
+  "severity": "info" | "warn" | "error",
+  "rootCause"?: string,
+  "suggestions"?: string[],
+  "signals"?: Array<{ "kind": "error" | "slow" | "status" | "db" | "pattern", "message": string }>
+}
+
+Rules:
+- Keep summary short and concrete.
+- Use severity="error" for HTTP >= 400 or error events; "warn" for slow traces; else "info".
+- Suggestions should be actionable and specific (2-5 bullets).
+- If unsure, say so in rootCause and give safe suggestions.
+`;
+
+  const user = {
+    traceId,
+    appName,
+    headerOp,
+    events: traceSummary
+  };
+
+  const resp = await openai.responses.create({
+    model: INSIGHT_MODEL,
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: JSON.stringify(user) }
+    ]
+  });
+
+  const text = resp.output_text?.trim();
+  if (!text) throw new Error("Empty OpenAI response");
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`OpenAI did not return JSON. Got: ${text.slice(0, 200)}`);
+  }
+
+  // minimal validation / defaults
+  return {
+    traceId,
+    appName,
+    headerOp,
+    summary: String(parsed.summary ?? `${headerOp}`),
+    severity:
+      parsed.severity === "warn" || parsed.severity === "error"
+        ? parsed.severity
+        : "info",
+    rootCause: parsed.rootCause ? String(parsed.rootCause) : undefined,
+    suggestions: Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.map(String).slice(0, 6)
+      : undefined,
+    signals: Array.isArray(parsed.signals)
+      ? parsed.signals.slice(0, 8).map((s: any) => ({
+          kind: s.kind,
+          message: String(s.message ?? "")
+        }))
+      : undefined
+  };
+}
+
+export async function buildInsightForTrace(
+  traceId: string,
+  events: Event[]
+): Promise<Insight> {
+
+  const ENABLE_AI = process.env.ENABLE_AI_INSIGHTS === "true";
+  const canUseAI = ENABLE_AI && !!process.env.OPENAI_API_KEY;
+  if (!canUseAI) {
+    return buildHeuristicInsightForTrace(traceId, events);
+  }
+
+  try {
+    return await buildAIInsightForTrace(traceId, events);
+  } catch (err) {
+    console.error(
+      "[AI] Insight generation failed, falling back to heuristic:",
+      err
+    );
+    return buildHeuristicInsightForTrace(traceId, events);
+  }
 }

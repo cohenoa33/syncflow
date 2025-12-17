@@ -1,40 +1,113 @@
 # MERN Sample App 2
 
-Example application demonstrating SyncFlow agent integration with a MERN stack backend.
+Second example application demonstrating **SyncFlow agent integration** with a MERN stack backend.
 
-> **Note**: This is a development/demo application. It does not include production features like rate limiting, authentication, or input validation. Do not use in production without proper security measures.
-> ***Note***: `agent.instrumentMongoose(mongoose)` must run **before** defining Mongoose models, otherwise hooks won't attach.
-> Note: the sample app runs on port **4000**.
+This app exists to validate **multi-app tracing** in the SyncFlow dashboard alongside `mern-sample-app`.
+
+> ⚠️ **Development / demo only**  
+> This app is intentionally minimal and does **not** include production features such as authentication, validation, or rate limiting.
+
+---
+
+## Purpose
+
+- Demonstrate **multiple apps** streaming traces into the same SyncFlow dashboard
+- Validate **app-level filtering** in the UI
+- Show trace separation by `appName` and `traceId`
+
+---
 
 ## Features
 
-- Express REST API with sample routes
+- Express REST API
 - Mongoose models and database operations
-- SyncFlow agent auto-instrumentation for Express + Mongoose
-- Streams events to the dashboard on startup (no manual emits)
+- SyncFlow agent auto-instrumentation:
+  - Express requests
+  - Mongoose operations
+- Automatic trace correlation (Express → Mongoose)
+- No manual `emit()` calls required
+
+---
+
+## Ports & Databases
+
+| Item | Value |
+|----|----|
+| App port | **4001** |
+| MongoDB | `syncflow-demo-2` |
+| Dashboard | http://localhost:5173 |
+| Socket server | http://localhost:5050 |
+
+---
 
 ## Setup
 
-1. Make sure MongoDB is running on port 27017 (local or Docker)
-2. Run the app:
+### 1. Ensure MongoDB is running
+Local or Docker:
+```bash
+docker start syncflow-mongo-2
+```
 
+### 2. Run the app
+From the app directory:
 ```bash
 pnpm dev
 ```
 
+The app will:
+- Start on **port 4001**
+- Connect to its own MongoDB database
+- Automatically stream events to the SyncFlow dashboard
 
-> Important: `agent.instrumentMongoose(mongoose)` must run **before** defining models so hooks attach correctly.
+## API Endpoints
+Test with curl or Postman:
+- GET `/api/users` — List users
+- POST `/api/users` — Create user
 
-## Testing
+```json 
+{ "name": "Jane", "email": "jane@test.com" }
+```
 
-Try these API endpoints:
+- GET `/api/users/:id` — Get user
+- PUT `/api/users/:id` — Update user
+- DELETE /`api/users/:id` — Delete user
 
-- `GET /api/users` - List all users
-- `POST /api/users` - Create a user (body: { name, email })
-- `GET /api/users/:id` - Get user by ID
-- `PUT /api/users/:id` - Update user
-- `DELETE /api/users/:id` - Delete user
+Each request produces:
+- An Express event
+- One or more Mongoose events
+- A single correlated trace in the dashboard
+
+## Multi-App Demo
 
 
-Each operation emits events to the SyncFlow dashboard (manual emits for MVP; auto-capture comes in Step 5).
 
+Run **both** sample apps simultaneously:
+
+| App               | Port | App Name            |
+|-------------------|------|---------------------|
+| mern-sample-app   | 4000 | mern-sample-app     |
+| mern-sample-app-2 | 4001 | mern-sample-app-2   |
+
+### In the dashboard:
+- Use **Application chips** to filter traces by app
+- Verify traces remain isolated per app
+- Compare performance and error behavior across apps
+
+
+
+### Important Notes
+- `agent.instrumentMongoose(mongoose)` must run before defining Mongoose models
+- This app intentionally mirrors the first sample app with a separate:
+    -  Port
+    -  Database
+    -  appName
+
+⸻
+
+### Related
+
+- [@syncflow/agent-node￼](./packages/agent-node/README.md) 
+- [@syncflow/dashboard-web](./packages/dashboard-web/README.md)
+- [MERN Sample App](./examples/mern-sample-app/README.md) 
+
+© 2025 Noa Rabin Cohen
