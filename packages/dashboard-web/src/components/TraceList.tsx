@@ -17,7 +17,13 @@ type Props = {
   onToggleAllPayloads: () => void;
   onToggleAppFromTrace: (appName: string) => void;
   toggleInsight: (traceId: string) => void;
-  insightMap: Record<string, any>;
+  insightStateMap: Record<
+    string,
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "ready"; data: any }
+    | { status: "error"; error: string }
+  >;
   insightOpenMap: Record<string, boolean>;
   setInsightOpenMap: React.Dispatch<
     React.SetStateAction<Record<string, boolean>>
@@ -39,7 +45,7 @@ export function TraceList({
   onToggleAppFromTrace,
   toggleInsight,
   insightOpenMap,
-  insightMap,
+  insightStateMap,
   setInsightOpenMap,
   onRegenerateInsight
 }: Props) {
@@ -97,7 +103,12 @@ export function TraceList({
           {filteredTraceGroups.map((g) => {
             const traceOpen = traceOpenMap[g.traceId] ?? true;
             const insightOpen = !!insightOpenMap[g.traceId];
-            const insight = insightMap[g.traceId];
+           const insightState = insightStateMap[g.traceId] ?? {
+             status: "idle"
+           };
+           const insight =
+             insightState.status === "ready" ? insightState.data : null;
+            const regenDisabled = insightState.status === "loading";
 
             return (
               <div key={g.traceId} className="p-4">
@@ -274,29 +285,77 @@ export function TraceList({
                 )}
                 {insightOpen && (
                   <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
-                    {!insight ? (
-                      <div className="text-sm text-gray-500">
+                    {insightState.status === "loading" ? (
+                      <div className="p-3 text-sm text-gray-500">
                         Generating insight…
                       </div>
-                    ) : (
-                      <div className="rounded-lg bg-gray-50 p-3 ">
+                    ) : insightState.status === "error" ? (
+                      <div className="p-3">
+                        <div className="text-sm text-rose-700 font-medium">
+                          Failed to generate insight
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">
+                          {insightState.error}
+                        </div>
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onRegenerateInsight(g.traceId)}
+                            disabled={regenDisabled}
+                            className={`text-xs px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 ${
+                              regenDisabled
+                                ? "opacity-50 cursor-not-allowed"
+                                : ""
+                            }`}
+                          >
+                            Retry
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setInsightOpenMap((m) => ({
+                                ...m,
+                                [g.traceId]: false
+                              }))
+                            }
+                            className="ml-auto text-xs text-gray-500 hover:text-gray-900"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    ) : insightState.status === "ready" && insight ? (
+                      <div className="rounded-lg bg-gray-50 p-3">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">
                               Insight
                             </span>
 
-                            <span className={`text-xs px-2 py-0.5 rounded ...`}>
+                            <span className="text-xs px-2 py-0.5 rounded">
                               {insight.severity}
                             </span>
+                            {insight.source && (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
+                                {insight.source.toUpperCase()}
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => onRegenerateInsight(g.traceId)}
-                              className="text-xs px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                              disabled={regenDisabled}
+                              className={`text-xs px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 ${
+                                regenDisabled
+                                  ? "opacity-50 cursor-not-allowed"
+                                  : ""
+                              }`}
                               title="Recompute insight for this trace"
                             >
                               Regenerate
                             </button>
+
                             <button
                               type="button"
                               onClick={() =>
@@ -349,6 +408,10 @@ export function TraceList({
                               </div>
                             )}
                         </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 text-sm text-gray-500">
+                        Open “AI Insight” to generate.
                       </div>
                     )}
                   </div>

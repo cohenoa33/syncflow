@@ -30,3 +30,9 @@ export type TraceGroup = {
   slow?: boolean;
   hasError?: boolean;
 };
+export   
+  type InsightState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: any }
+  | { status: "error"; error: string };

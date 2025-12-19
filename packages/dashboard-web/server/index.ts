@@ -323,8 +323,9 @@ app.post("/api/demo-seed", async (req, res) => {
       });
     }
 
-const insight = await buildInsightForTrace(traceId, traceEvents as any);
-
+const insight = await buildInsightForTrace(traceId, traceEvents as any, {
+  allowFallback: true
+});
     // 3) upsert cache
     await InsightModel.updateOne(
       { traceId },
@@ -343,17 +344,20 @@ app.post("/api/insights/:traceId/regenerate", async (req, res) => {
   try {
     const traceId = req.params.traceId;
 
-const traceEvents = await EventModel.find({ traceId }).sort({ ts: 1 }).lean();
+    const traceEvents = await EventModel.find({ traceId })
+      .sort({ ts: 1 })
+      .lean();
 
-if (traceEvents.length === 0) {
-  return res.status(404).json({
-    ok: false,
-    error: "TRACE_NOT_FOUND",
-    message: `No events found for traceId=${traceId}`
-  });
-}
-const insight = await buildInsightForTrace(traceId, traceEvents as any);
-
+    if (traceEvents.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "TRACE_NOT_FOUND",
+        message: `No events found for traceId=${traceId}`
+      });
+    }
+    const insight = await buildInsightForTrace(traceId, traceEvents as any, {
+      allowFallback: false
+    });
     await InsightModel.updateOne(
       { traceId },
       { $set: { traceId, insight, computedAt: Date.now() } },
@@ -361,9 +365,14 @@ const insight = await buildInsightForTrace(traceId, traceEvents as any);
     );
 
     res.json({ ok: true, insight });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[Dashboard] Failed to regenerate insight", err);
-    res.status(500).json({ ok: false });
+
+    res.status(503).json({
+      ok: false,
+      error: "AI_INSIGHT_FAILED",
+      message: err?.message ?? "Failed to regenerate insight"
+    });
   }
 });
 /* -----------------------------

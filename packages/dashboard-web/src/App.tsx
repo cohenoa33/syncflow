@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL } from "./lib/config";
 
-import type { Agent, Event, TraceGroup } from "./lib/types";
+import type { Agent, Event, InsightState, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
 import { groupEventsIntoTraces } from "./lib/trace";
 import { buildInitialMaps } from "./lib/uiState";
@@ -35,10 +35,13 @@ export default function App() {
   const [showSlowOnly, setShowSlowOnly] = useState(false);
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
-  const [insightMap, setInsightMap] = useState<Record<string, any>>({});
+
   const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
     {}
   );
+  const [insightStateMap, setInsightStateMap] = useState<
+    Record<string, InsightState>
+  >({});
 
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
@@ -379,48 +382,65 @@ export default function App() {
     }
   };
 
-  const toggleInsight = async (traceId: string) => {
-    setInsightOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
+const toggleInsight = async (traceId: string) => {
+  setInsightOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
 
-    // fetch once
-    if (insightMap[traceId]) return;
+  // if we already have ready data, don’t refetch
+  if (insightStateMap[traceId]?.status === "ready") return;
 
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
-      );
-      const json = await res.json();
-      if (json?.ok && json.insight) {
-        setInsightMap((m) => ({ ...m, [traceId]: json.insight }));
+  setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
+    );
+    const json = await res.json();
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.message ?? "Failed to load insight");
+    }
+
+    setInsightStateMap((m) => ({
+      ...m,
+      [traceId]: { status: "ready", data: json.insight }
+    }));
+  } catch (e: any) {
+    setInsightStateMap((m) => ({
+      ...m,
+      [traceId]: { status: "error", error: e?.message ?? "Request failed" }
+    }));
+  }
+};
+
+const regenerateInsight = async (traceId: string) => {
+  setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
+  setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
+
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
+      {
+        method: "POST"
       }
-    } catch (e) {
-      console.error("Failed to load insight", e);
+    );
+
+    const json = await res.json();
+
+    if (!res.ok || !json?.ok || !json?.insight) {
+      throw new Error(json?.message ?? "Failed to regenerate insight");
     }
-  };
 
-  const regenerateInsight = async (traceId: string) => {
-    try {
-      // show loading state for this trace (optional but nice)
-      setInsightMap((m) => ({ ...m, [traceId]: null }));
-
-      const res = await fetch(
-        `${API_BASE}/api/insights/${traceId}/regenerate`,
-        {
-          method: "POST"
-        }
-      );
-      const json: { ok: boolean; insight?: any } = await res.json();
-
-      if (!json.ok || !json.insight) throw new Error("regenerate failed");
-
-      setInsightMap((m) => ({ ...m, [traceId]: json.insight }));
-      setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
-    } catch (err) {
-      console.error("[Dashboard] failed to regenerate insight", err);
-      alert("Failed to regenerate insight.");
-    }
-  };
-
+    setInsightStateMap((m) => ({
+      ...m,
+      [traceId]: { status: "ready", data: json.insight }
+    }));
+  } catch (e: any) {
+    setInsightStateMap((m) => ({
+      ...m,
+      [traceId]: { status: "error", error: e?.message ?? "Request failed" }
+    }));
+  }
+};
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -501,7 +521,7 @@ export default function App() {
           }
           onToggleAppFromTrace={(appName) => toggleApp(appName)}
           toggleInsight={toggleInsight}
-          insightMap={insightMap}
+          insightStateMap={insightStateMap}
           insightOpenMap={insightOpenMap}
           setInsightOpenMap={setInsightOpenMap}
           onRegenerateInsight={regenerateInsight}

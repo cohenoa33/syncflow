@@ -4,7 +4,6 @@ export type Insight = {
   traceId: string;
   appName?: string;
   headerOp?: string;
-
   summary: string;
   severity: "info" | "warn" | "error";
 
@@ -14,6 +13,7 @@ export type Insight = {
     kind: "error" | "slow" | "status" | "db" | "pattern";
     message: string;
   }>;
+  source?: "ai" | "heuristic"; //
 };
 
 type Event = {
@@ -28,6 +28,89 @@ type Event = {
   payload: Record<string, any>;
 };
 
+function safeErrMeta(err: any) {
+  return {
+    name: err?.name,
+    message: err?.message,
+    status: err?.status ?? err?.statusCode,
+    code: err?.code,
+    type: err?.type,
+    param: err?.param,
+    request_id: err?.request_id,
+    cause: err?.cause?.message
+  };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label = "operation"
+): Promise<T> {
+  let t: NodeJS.Timeout | null = null;
+
+  const timeout = new Promise<never>((_, reject) => {
+    t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function withRetries<T>(
+  fn: (attempt: number) => Promise<T>,
+  opts?: {
+    retries?: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+    shouldRetry?: (err: any) => boolean;
+  }
+): Promise<T> {
+  const retries = opts?.retries ?? 2; // total attempts = 1 + retries
+  const baseDelayMs = opts?.baseDelayMs ?? 300;
+  const maxDelayMs = opts?.maxDelayMs ?? 2000;
+
+  const shouldRetry =
+    opts?.shouldRetry ??
+    ((err: any) => {
+      const status = err?.status ?? err?.statusCode;
+      // retry on network-ish errors + 429/5xx
+      return (
+        status === 429 ||
+        (typeof status === "number" && status >= 500) ||
+        /timed out/i.test(err?.message ?? "") ||
+        /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/i.test(err?.code ?? "")
+      );
+    });
+
+  let lastErr: any;
+
+  for (let attempt = 1; attempt <= 1 + retries; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+
+      if (attempt >= 1 + retries || !shouldRetry(err)) throw err;
+
+      const delay = Math.min(
+        maxDelayMs,
+        baseDelayMs * Math.pow(2, attempt - 1)
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastErr;
+}
 export function buildHeuristicInsightForTrace(
   traceId: string,
   events: Event[]
@@ -169,7 +252,8 @@ export function buildHeuristicInsightForTrace(
     severity,
     rootCause,
     suggestions,
-    signals
+    signals,
+    source: "heuristic"
   };
 }
 import OpenAI from "openai";
@@ -187,8 +271,6 @@ function getOpenAI() {
   if (!_openai) _openai = new OpenAI({ apiKey });
   return _openai;
 }
-
-
 
 function summarizeEventsForLLM(events: Event[]) {
   return events
@@ -214,7 +296,6 @@ async function buildAIInsightForTrace(
   traceId: string,
   events: Event[]
 ): Promise<Insight> {
-
   const INSIGHT_MODEL = process.env.INSIGHT_MODEL || "gpt-5.2";
 
   const openai = getOpenAI();
@@ -254,21 +335,48 @@ Rules:
     events: traceSummary
   };
 
-  const resp = await openai.responses.create({
-    model: INSIGHT_MODEL,
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: JSON.stringify(user) }
-    ]
-  });
+  const start = Date.now();
+  const timeoutMs = Number(process.env.INSIGHT_TIMEOUT_MS || 12_000);
 
+  let resp;
+  try {
+    resp = await withRetries(
+      async (attempt) => {
+        return await withTimeout(
+          openai.responses.create({
+            model: INSIGHT_MODEL,
+            input: [
+              { role: "system", content: system },
+              { role: "user", content: JSON.stringify(user) }
+            ]
+          }),
+          timeoutMs,
+          `openai.responses.create (attempt ${attempt})`
+        );
+      },
+      { retries: Number(process.env.INSIGHT_RETRIES || 2) }
+    );
+  } catch (err) {
+    console.error("[AI] OpenAI insight failed", {
+      traceId,
+      model: INSIGHT_MODEL,
+      ms: Date.now() - start,
+      ...safeErrMeta(err)
+    });
+    throw err; // keep fallback behavior
+  }
   const text = resp.output_text?.trim();
   if (!text) throw new Error("Empty OpenAI response");
 
   let parsed: any;
   try {
     parsed = JSON.parse(text);
-  } catch {
+  } catch (err) {
+    console.error("[AI] Non-JSON response from model", {
+      traceId,
+      model: INSIGHT_MODEL,
+      preview: text.slice(0, 300)
+    });
     throw new Error(`OpenAI did not return JSON. Got: ${text.slice(0, 200)}`);
   }
 
@@ -291,28 +399,38 @@ Rules:
           kind: s.kind,
           message: String(s.message ?? "")
         }))
-      : undefined
+      : undefined,
+    source: "ai"
   };
 }
-
 export async function buildInsightForTrace(
   traceId: string,
-  events: Event[]
+  events: Event[],
+  opts?: { allowFallback?: boolean }
 ): Promise<Insight> {
+  const allowFallback = opts?.allowFallback ?? true;
 
   const ENABLE_AI = process.env.ENABLE_AI_INSIGHTS === "true";
   const canUseAI = ENABLE_AI && !!process.env.OPENAI_API_KEY;
+
   if (!canUseAI) {
+    if (!allowFallback) {
+      throw new Error("AI insights disabled or missing OPENAI_API_KEY");
+    }
     return buildHeuristicInsightForTrace(traceId, events);
   }
 
   try {
     return await buildAIInsightForTrace(traceId, events);
   } catch (err) {
-    console.error(
-      "[AI] Insight generation failed, falling back to heuristic:",
-      err
-    );
+    console.error("[AI] Insight generation failed", err);
+
+    if (!allowFallback) {
+      // ✅ bubble up so route returns error to UI
+      throw err;
+    }
+
+    console.warn("[AI] Falling back to heuristic insight");
     return buildHeuristicInsightForTrace(traceId, events);
   }
 }
