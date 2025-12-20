@@ -1,15 +1,15 @@
 import { z } from "zod";
 
-export const InsightSchema = z.object({
+export const InsightLLMSchema = z.object({
   traceId: z.string(),
-  appName: z.string().optional(),
-  headerOp: z.string().optional(),
+  appName: z.string().nullable(),
+  headerOp: z.string().nullable(),
 
   summary: z.string().min(1),
   severity: z.enum(["info", "warn", "error"]),
 
-  rootCause: z.string().optional(),
-  suggestions: z.array(z.string()).max(8).optional(),
+  rootCause: z.string().nullable(),
+  suggestions: z.array(z.string()).max(8).nullable(),
 
   signals: z
     .array(
@@ -19,9 +19,9 @@ export const InsightSchema = z.object({
       })
     )
     .max(12)
-    .optional(),
+    .nullable(),
 
-  source: z.enum(["ai", "heuristic"]).optional()
+  source: z.enum(["ai", "heuristic"]).nullable()
 });
 
-export type InsightSchemaType = z.infer<typeof InsightSchema>;
+export type InsightLLM = z.infer<typeof InsightLLMSchema>;

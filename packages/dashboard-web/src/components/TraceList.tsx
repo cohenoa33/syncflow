@@ -337,11 +337,7 @@ export function TraceList({
                             <span className="text-xs px-2 py-0.5 rounded">
                               {insight.severity}
                             </span>
-                            {insight.source && (
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
-                                {insight.source.toUpperCase()}
-                              </span>
-                            )}
+                         
                             <button
                               type="button"
                               onClick={() => onRegenerateInsight(g.traceId)}

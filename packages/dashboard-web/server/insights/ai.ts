@@ -1,9 +1,9 @@
-import { InsightSchema } from "./schema";
+import { zodTextFormat } from "openai/helpers/zod";
+import { InsightLLMSchema } from "./schema";
 import { getOpenAI } from "./openaiClient";
 import { summarizeEventsForLLM } from "./summarize";
 import { getInsightSystemPrompt } from "./llmPrompt";
 import type { Insight, TraceEvent } from "./types";
-
 /* -----------------------------
         Helpers
 ----------------------------- */
@@ -11,13 +11,7 @@ function trimForLog(s: string, max = 800) {
   const t = (s ?? "").trim();
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
-function tryParseJson(text: string): unknown | null {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -90,7 +84,6 @@ async function withTimeout<T>(
   }
 }
 
-
 function safeErrMeta(err: any) {
   return {
     name: err?.name,
@@ -121,15 +114,9 @@ export async function buildAIInsightForTrace(
   const headerOp = expressEvt?.operation ?? ordered[0]?.operation ?? "Trace";
 
   const traceSummary = summarizeEventsForLLM(ordered);
-
   const system = getInsightSystemPrompt();
 
-  const user = {
-    traceId,
-    appName,
-    headerOp,
-    events: traceSummary
-  };
+  const user = { traceId, appName, headerOp, events: traceSummary };
 
   const start = Date.now();
   const timeoutMs = Number(process.env.INSIGHT_TIMEOUT_MS || 12_000);
@@ -137,19 +124,21 @@ export async function buildAIInsightForTrace(
   let resp;
   try {
     resp = await withRetries(
-      async (attempt) => {
-        return await withTimeout(
-          openai.responses.create({
+      async (attempt) =>
+        withTimeout(
+          openai.responses.parse({
             model: INSIGHT_MODEL,
             input: [
               { role: "system", content: system },
               { role: "user", content: JSON.stringify(user) }
-            ]
+            ],
+            text: {
+              format: zodTextFormat(InsightLLMSchema, "insight")
+            }
           }),
           timeoutMs,
-          `openai.responses.create (attempt ${attempt})`
-        );
-      },
+          `openai.responses.parse (attempt ${attempt})`
+        ),
       { retries: Number(process.env.INSIGHT_RETRIES || 2) }
     );
   } catch (err) {
@@ -159,32 +148,28 @@ export async function buildAIInsightForTrace(
       ms: Date.now() - start,
       ...safeErrMeta(err)
     });
-    throw err; // keep fallback behavior
-  }
-  const text = resp.output_text?.trim();
-  if (!text) throw new Error("Empty OpenAI response");
-
-  const parsed = tryParseJson(text);
-  if (!parsed) {
-    console.error("[AI] Non-JSON output:", trimForLog(text));
-    throw new Error("OpenAI did not return valid JSON");
+    throw err;
   }
 
-  const validated = InsightSchema.safeParse(parsed);
+  // output_parsed is already validated to your schema by the SDK helper
+  const parsed = resp.output_parsed;
+  if (!parsed) throw new Error("Missing output_parsed from OpenAI response");
 
-  if (!validated.success) {
-    console.error("[AI] Insight JSON failed schema validation");
-    console.error("[AI] Zod issues:", validated.error.issues);
-    console.error("[AI] Raw output:", trimForLog(text));
-    throw new Error("OpenAI returned JSON but wrong shape");
-  }
+  // Convert nullable -> undefined to match your Insight type style (optional fields)
+  const suggestions =
+    parsed.suggestions === null ? undefined : parsed.suggestions;
+  const signals = parsed.signals === null ? undefined : parsed.signals;
+  const rootCause = parsed.rootCause === null ? undefined : parsed.rootCause;
 
-  // IMPORTANT: lock these fields to server-known values
-  // (prevents model from inventing a different traceId/appName/headerOp)
   return {
-    ...validated.data,
-    traceId,
-    appName,
-    headerOp
+    traceId, // lock server-truth
+    appName, // lock server-truth
+    headerOp, // lock server-truth
+    summary: parsed.summary,
+    severity: parsed.severity,
+    rootCause,
+    suggestions,
+    signals,
+    source: "ai"
   };
 }
