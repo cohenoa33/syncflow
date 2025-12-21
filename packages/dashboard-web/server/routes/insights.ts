@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { EventModel, InsightModel } from "../models";
 import { buildInsightForTrace } from "../insights";
+import { checkRateLimit } from "../ai/rateLimit";
 
 const INSIGHT_TTL_MS = 1000 * 60 * 60;
 
@@ -27,6 +28,23 @@ export function registerInsightsRoutes(app: Express) {
           message: `No events found for traceId=${traceId}`
         });
       }
+        const enableAI = process.env.ENABLE_AI_INSIGHTS === "true";
+        if (enableAI) {
+          const key =
+            req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+          const rl = checkRateLimit(`insight:get:${key}`);
+
+          res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+          res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
+
+          if (!rl.ok) {
+            return res.status(429).json({
+              ok: false,
+              error: "RATE_LIMITED",
+              message: "Too many insight requests. Try again soon."
+            });
+          }
+        }
 
       const insight = await buildInsightForTrace(traceId, traceEvents as any, {
         allowFallback: true
@@ -48,7 +66,7 @@ export function registerInsightsRoutes(app: Express) {
   app.post("/api/insights/:traceId/regenerate", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-
+console.log("[Dashboard] Regenerating insight for trace", traceId);
       const traceEvents = await EventModel.find({ traceId })
         .sort({ ts: 1 })
         .lean();
@@ -59,6 +77,19 @@ export function registerInsightsRoutes(app: Express) {
           message: `No events found for traceId=${traceId}`
         });
       }
+const key = req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+const rl = checkRateLimit(`insight:regen:${key}`);
+
+res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
+
+if (!rl.ok) {
+  return res.status(429).json({
+    ok: false,
+    error: "RATE_LIMITED",
+    message: "Too many regenerate requests. Try again soon."
+  });
+}
 
       const insight = await buildInsightForTrace(traceId, traceEvents as any, {
         allowFallback: false
