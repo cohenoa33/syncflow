@@ -16,7 +16,12 @@ async function main() {
   });
 
   const app = express();
-  app.use(cors());
+ app.use(
+   cors({
+     origin: "*",
+     exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
+   })
+ );
   app.use(express.json());
 
   const httpServer = createServer(app);

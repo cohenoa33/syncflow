@@ -5,9 +5,13 @@ import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
 
 export function attachSocketServer(httpServer: HttpServer) {
-  const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-  });
+ const io = new Server(httpServer, {
+   cors: {
+     origin: "*",
+     methods: ["GET", "POST"],
+     exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
+   }
+ });
 
   io.on("connection", (socket) => {
     console.log("[Dashboard] Client connected:", socket.id);

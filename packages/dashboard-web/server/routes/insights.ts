@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { EventModel, InsightModel } from "../models";
 import { buildInsightForTrace } from "../insights";
 import { checkRateLimit } from "../ai/rateLimit";
+import { apiError } from "../errors";
 
 const INSIGHT_TTL_MS = 1000 * 60 * 60;
 
@@ -15,7 +16,12 @@ export function registerInsightsRoutes(app: Express) {
         cached?.computedAt && Date.now() - cached.computedAt < INSIGHT_TTL_MS;
 
       if (cached?.insight && fresh) {
-        return res.json({ ok: true, insight: cached.insight, cached: true });
+        return res.json({
+          ok: true,
+          insight: cached.insight,
+          cached: true,
+          computedAt: cached.computedAt
+        });
       }
 
       const traceEvents = await EventModel.find({ traceId })
@@ -56,7 +62,12 @@ export function registerInsightsRoutes(app: Express) {
         { upsert: true }
       );
 
-      return res.json({ ok: true, insight, cached: false });
+      return res.json({
+        ok: true,
+        insight,
+        cached: false,
+        computedAt: Date.now()
+      });
     } catch (err) {
       console.error("[Dashboard] Failed to build insight", err);
       res.status(500).json({ ok: false });
@@ -95,21 +106,39 @@ if (!rl.ok) {
         allowFallback: false
       });
 
-      await InsightModel.updateOne(
-        { traceId },
-        { $set: { traceId, insight, computedAt: Date.now() } },
-        { upsert: true }
-      );
+   const computedAt = Date.now();
 
-      res.json({ ok: true, insight });
-    } catch (err: any) {
-      console.error("[Dashboard] Failed to regenerate insight", err);
+   await InsightModel.updateOne(
+     { traceId },
+     { $set: { traceId, insight, computedAt } },
+     { upsert: true }
+   );
 
-      res.status(503).json({
-        ok: false,
-        error: "AI_INSIGHT_FAILED",
-        message: err?.message ?? "Failed to regenerate insight"
-      });
-    }
+   return res.json({
+     ok: true,
+     insight,
+     cached: false,
+     computedAt,
+   });
+
+
+}catch (err: any) {
+  if (err?.__apiError) {
+    const { code, message, retryAfterMs, status } = err.__apiError;
+    const e = apiError(code, message, {
+      retryAfterMs,
+      status
+    });
+    return res.status(e.status).json(e.body);
+  }
+
+  console.error("[Dashboard] Unhandled insight error", err);
+
+  const e = apiError(
+    "INTERNAL_ERROR",
+    "Unexpected error while generating insight."
+  );
+  return res.status(e.status).json(e.body);
+}
   });
 }

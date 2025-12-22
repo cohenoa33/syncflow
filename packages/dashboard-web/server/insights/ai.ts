@@ -7,11 +7,37 @@ import type { Insight, TraceEvent } from "./types";
 /* -----------------------------
         Helpers
 ----------------------------- */
-function trimForLog(s: string, max = 800) {
-  const t = (s ?? "").trim();
-  return t.length > max ? t.slice(0, max) + "…" : t;
-}
 
+function classifyAIError(err: any) {
+  const status = err?.status ?? err?.statusCode;
+  const msg = err?.message ?? "AI request failed";
+
+  if (status === 429) {
+    const retryAfter =
+      Number(err?.headers?.["retry-after"]) * 1000 || undefined;
+
+    return {
+      code: "AI_RATE_LIMITED" as const,
+      message: "Too many AI requests. Please try again shortly.",
+      retryAfterMs: retryAfter,
+      status: 429
+    };
+  }
+
+  if (/timed out/i.test(msg)) {
+    return {
+      code: "AI_TIMEOUT" as const,
+      message: "AI request timed out. Please retry.",
+      status: 503
+    };
+  }
+
+  return {
+    code: "AI_UNAVAILABLE" as const,
+    message: "AI service is temporarily unavailable.",
+    status: 503
+  };
+}
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -142,15 +168,18 @@ export async function buildAIInsightForTrace(
       { retries: Number(process.env.INSIGHT_RETRIES || 2) }
     );
   } catch (err) {
-    console.error("[AI] OpenAI insight failed", {
+
+    const classified = classifyAIError(err);
+
+    console.error("[AI] Insight failed", {
       traceId,
-      model: INSIGHT_MODEL,
-      ms: Date.now() - start,
       ...safeErrMeta(err)
     });
-    throw err;
-  }
 
+    throw Object.assign(new Error(classified.message), {
+      __apiError: classified
+    });
+  }
   // output_parsed is already validated to your schema by the SDK helper
   const parsed = resp.output_parsed;
   if (!parsed) throw new Error("Missing output_parsed from OpenAI response");

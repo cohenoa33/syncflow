@@ -11,7 +11,7 @@ syncflow/
 │   └── dashboard-web/       # React dashboard + Socket.IO server + API
 ├── examples/
 │   └── mern-sample-app/     # Demo backend using the agent (port 4000)
-│   └── mern-sample-app/     # Demo backend using the agent (port 4001)
+│   └── mern-sample-app-2/     # Demo backend using the agent (port 4001)
 ├── pnpm-workspace.yaml      # pnpm workspace configuration
 └── package.json             # Root package with scripts
 ```
@@ -23,10 +23,6 @@ syncflow/
   - Dashboard DB: `syncflow-dashboard`
   - Sample app DBs: `syncflow-demo`, `syncflow-demo-2`
 
-### Terminal 1: Install Dependencies
-```bash
-pnpm install
-```
 
 ### Terminal 1: Install Dependencies
 ```bash
@@ -109,13 +105,23 @@ The Dashboard has a **Demo Mode** button that:
 
 ## 🤖 AI Insights (server-powered)
 
-The dashboard can generate AI Insights per trace using the server API.
+The dashboard can generate **server-powered AI Insights per trace**, including root-cause analysis, detected signals, and concrete suggestions.
+
+
 ### Local setup
 Create packages/dashboard-web/.env.local:
 ```env
 OPENAI_API_KEY=your_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
+
+# AI insight behavior
+INSIGHT_TIMEOUT_MS=12000
+INSIGHT_RETRIES=2
+
+# AI rate limiting
+AI_RATE_LIMIT_MAX=20
+AI_RATE_LIMIT_WINDOW_MS=60000
 ```
 ### Production setup (Render)
 Set environment variables in Render:
@@ -125,8 +131,10 @@ Set environment variables in Render:
 
 Notes:
 
-- Insights are cached in MongoDB with a TTL-style freshness window (server-side).
-- The UI supports Regenerate to force recomputation.
+- Insights are cached in MongoDB with a TTL-style freshness window (server-side)
+- The UI shows **Fresh vs Cached** indicators with computed timestamps
+- Regeneration is **rate-limited** to protect the system
+- When rate-limited, the UI shows a live countdown until retry is allowed
 
 
 ## 📖 How It Works (Current MVP)
@@ -209,8 +217,9 @@ pnpm clean
 - Export filtered traces to JSON
 - ** Mongo persistence** of events + REST API
 - **AI Insights** per trace (server-powered)
-  - Cached in MongoDB
-  - Regenerate supported
+  - Cached with freshness window
+  - Fresh vs Cached indicators
+  - Regenerate with rate limiting + countdown UI
 
 
 
@@ -237,7 +246,7 @@ pnpm clean
 - Export JSON
 - Trace persistence (MongoDB)
 
-### ✅ Phase 3: AI Insights (In Progress)
+### 🚧 Phase 3: AI Insights (Near Complete)
 - Server-powered AI insights per trace
 - Cached insights + regenerate endpoint
 - Better model/tooling prompts & structured output validation
@@ -257,7 +266,7 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## Deployment Notes
 
-SyncFlow is currently deployed on Render for demo purposes.
+SyncFlow is currently deployed on Render for demo and internal testing purposes.
 
 
 ## 📄 License

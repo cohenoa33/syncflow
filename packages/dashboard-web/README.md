@@ -27,6 +27,8 @@ This package contains **both**:
 - 🧠 Root cause analysis + signals + suggestions
 - 💾 Cached in MongoDB with freshness window
 - 🔁 **Regenerate** button to force recomputation
+- 🏷️ Fresh vs Cached indicators with computed time
+- ⏱️ Rate-limited regeneration with countdown feedback
 - ❌ Close insight panel independently from trace
 
 ### UX
@@ -59,6 +61,15 @@ Create `packages/dashboard-web/.env.local` for local development:
 OPENAI_API_KEY=your_openai_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
+
+# AI insight behavior
+INSIGHT_TIMEOUT_MS=12000
+INSIGHT_RETRIES=2
+
+# Rate limiting (AI insights)
+AI_RATE_LIMIT_MAX=20
+AI_RATE_LIMIT_WINDOW_MS=60000
+
 MONGODB_URI=mongodb://localhost:27017/syncflow-dashboard
 ```
 
@@ -135,6 +146,24 @@ If no events exist for a trace, the API returns:
   "error": "TRACE_NOT_FOUND"
 }
 ```
+
+## ⏱️ AI Rate Limiting
+
+AI insight generation and regeneration are rate-limited to protect the system.
+
+- Rate limits are applied per trace
+- Exposed via response headers:
+  - `X-RateLimit-Remaining`
+  - `X-RateLimit-Reset`
+- When exceeded, the API returns `429 Too Many Requests`
+
+### UI Behavior
+- When rate-limited, the Insight panel shows a live countdown (`Try again in Xs`)
+- Regenerate button is disabled until the reset time
+- Countdown updates every second while rate-limited
+- When not rate-limited, freshness timestamps update in 10s intervals
+
+
 ## 🧪 Demo Mode
 
 Demo Mode:
@@ -160,6 +189,7 @@ Useful for:
   ## 📝 Notes
 - This package is both UI and server — no separate backend needed
 - Designed for **local dev + demo deployments**
-- Production hardening (auth, rate limiting, quotas) is planned
+- Authentication, multi-tenancy, and distributed tracing are planned
+- AI insight rate limiting and UI feedback are implemented for production safety
 
 © 2025 Noa Rabin Cohen — MIT License

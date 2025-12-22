@@ -11,6 +11,7 @@ import { ApplicationsCard } from "./components/ApplicationsCard";
 import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
+import { parseRateLimitHeaders } from "./lib/rateLimit";
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -383,31 +384,59 @@ export default function App() {
   };
 
 const toggleInsight = async (traceId: string) => {
-  setInsightOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
+  const willOpen = !(insightOpenMap[traceId] ?? false);
+  setInsightOpenMap((m) => ({ ...m, [traceId]: willOpen }));
+  if (!willOpen) return;
 
-  // if we already have ready data, don’t refetch
   if (insightStateMap[traceId]?.status === "ready") return;
 
   setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
+
+  let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
 
   try {
     const res = await fetch(
       `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
     );
-    const json = await res.json();
+    rl = parseRateLimitHeaders(res.headers);
+
+    const json = await res.json().catch(() => ({}));
+
+    if (res.status === 429) {
+      throw {
+        __rateLimited: true,
+        rateLimit: rl,
+        message: json?.message ?? "Too many insight requests. Try again soon."
+      };
+    }
 
     if (!res.ok || !json?.ok) {
-      throw new Error(json?.message ?? "Failed to load insight");
+      throw {
+        message: json?.message ?? "Failed to load insight",
+        rateLimit: rl
+      };
     }
 
     setInsightStateMap((m) => ({
       ...m,
-      [traceId]: { status: "ready", data: json.insight }
+      [traceId]: {
+        status: "ready",
+        data: json.insight,
+        meta: { cached: json.cached, computedAt: json.computedAt },
+        rateLimit: rl
+      }
     }));
   } catch (e: any) {
+    const isRL = !!e?.__rateLimited;
     setInsightStateMap((m) => ({
       ...m,
-      [traceId]: { status: "error", error: e?.message ?? "Request failed" }
+      [traceId]: {
+        status: "error",
+        error: isRL
+          ? "Rate limited. Please try again soon."
+          : (e?.message ?? "Request failed"),
+        rateLimit: e?.rateLimit ?? rl
+      }
     }));
   }
 };
@@ -416,31 +445,57 @@ const regenerateInsight = async (traceId: string) => {
   setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
   setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
 
+  let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
+
   try {
     const res = await fetch(
       `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
-      {
-        method: "POST"
-      }
+      { method: "POST" }
     );
+    rl = parseRateLimitHeaders(res.headers);
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
+
+    if (res.status === 429) {
+      throw {
+        __rateLimited: true,
+        rateLimit: rl,
+        message:
+          json?.message ?? "Too many regenerate requests. Try again soon."
+      };
+    }
 
     if (!res.ok || !json?.ok || !json?.insight) {
-      throw new Error(json?.message ?? "Failed to regenerate insight");
+      throw {
+        message: json?.message ?? "Failed to regenerate insight",
+        rateLimit: rl
+      };
     }
 
     setInsightStateMap((m) => ({
       ...m,
-      [traceId]: { status: "ready", data: json.insight }
+      [traceId]: {
+        status: "ready",
+        data: json.insight,
+        meta: { cached: json.cached, computedAt: json.computedAt },
+        rateLimit: rl
+      }
     }));
   } catch (e: any) {
+    const isRL = !!e?.__rateLimited;
     setInsightStateMap((m) => ({
       ...m,
-      [traceId]: { status: "error", error: e?.message ?? "Request failed" }
+      [traceId]: {
+        status: "error",
+        error: isRL
+          ? "Rate limited. Please try again soon."
+          : (e?.message ?? "Request failed"),
+        rateLimit: e?.rateLimit ?? rl
+      }
     }));
   }
 };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}

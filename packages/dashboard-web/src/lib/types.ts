@@ -17,7 +17,7 @@ export interface Agent {
 }
 
 export type TraceGroup = {
-  traceId: string; 
+  traceId: string;
   displayTraceId?: string;
   events: Event[];
   headerOp: string;
@@ -30,9 +30,18 @@ export type TraceGroup = {
   slow?: boolean;
   hasError?: boolean;
 };
-export   
-  type InsightState =
+export type RateLimitMeta = {
+  remaining?: number;
+  resetAt?: number;
+};
+
+export type InsightState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; data: any }
-  | { status: "error"; error: string };
+  | { status: "error"; error: string; rateLimit?: RateLimitMeta }
+  | {
+      status: "ready";
+      data: any;
+      meta?: { cached?: boolean; computedAt?: number };
+      rateLimit?: RateLimitMeta;
+    };
