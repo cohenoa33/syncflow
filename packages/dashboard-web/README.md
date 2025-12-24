@@ -9,6 +9,7 @@ This package contains **both**:
 
 ---
 
+
 ## ✨ Features
 
 ### Monitoring
@@ -60,15 +61,18 @@ OPENAI_API_KEY=your_openai_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
 MONGODB_URI=mongodb://localhost:27017/syncflow-dashboard
-# AI insight sampling (production safety)
-INSIGHT_SAMPLE_RATE=1.0
-INSIGHT_SAMPLE_MIN_EVENTS=3
+
+# AI insight sampling (dev/prod)
+AI_INSIGHT_SAMPLE_RATE=1
+AI_INSIGHT_SAMPLE_ERRORS_ONLY=false
 ```
 
 Notes:
 -	`.env.local` is used in development
 - `.env` is used in production
 -  **Never commit API keys**
+- `AI_INSIGHT_SAMPLE_RATE` is a number between 0–1 (e.g. 0.25 = 25% of traces sampled).
+- `If AI_INSIGHT_SAMPLE_ERRORS_ONLY=true`, only traces with errors are eligible for sampling/generation.
 
 ## 🏗️ Build (Production)
 ```bash

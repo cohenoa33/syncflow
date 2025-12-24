@@ -2,6 +2,9 @@
 
 SyncFlow is an AI-powered full-stack dev assistant for MERN apps. It streams real-time backend/DB events to a React dashboard, traces errors across layers, and includes **AI Insights** to help devs debug faster and ship with confidence.
 
+## 🌐 Live Demo
+- Dashboard: <https://syncflow-demo.onrender.com/>
+
 ## 📦 Monorepo Structure
 
 ```
@@ -124,8 +127,8 @@ AI_RATE_LIMIT_MAX=20
 AI_RATE_LIMIT_WINDOW_MS=60000
 
 # AI insight sampling
-INSIGHT_SAMPLE_RATE=1.0
-INSIGHT_SAMPLE_MIN_EVENTS=3
+AI_INSIGHT_SAMPLE_RATE=1
+AI_INSIGHT_SAMPLE_ERRORS_ONLY=false
 
 ```
 ### Production setup (Render)
@@ -133,6 +136,14 @@ Set environment variables in Render:
 - OPENAI_API_KEY
 - ENABLE_AI_INSIGHTS=true
 - INSIGHT_MODEL=gpt-5.2
+
+- AI_RATE_LIMIT_MAX=20 (or whatever you want)
+- AI_RATE_LIMIT_WINDOW_MS=60000
+
+- AI_INSIGHT_SAMPLE_RATE=0.2 (example: 20% sampling in prod)
+- AI_INSIGHT_SAMPLE_ERRORS_ONLY=true (recommended for prod)
+
+
 
 ### Notes:
 
