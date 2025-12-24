@@ -2,19 +2,26 @@ import type { Express } from "express";
 import { EventModel, InsightModel } from "../models";
 import { buildInsightForTrace } from "../insights";
 import { checkRateLimit } from "../ai/rateLimit";
+import { shouldSampleInsight } from "../ai/sampling";
 import { apiError } from "../errors";
 
 const INSIGHT_TTL_MS = 1000 * 60 * 60;
 
+/**
+ * Insight resolution order:
+ * 1. Return cached insight if fresh
+ * 2. If sampling rules skip → INSIGHT_SAMPLED_OUT
+ * 3. If rate-limited → 429
+ * 4. Attempt AI insight
+ * 5. Fallback to heuristic if allowed
+ */
 export function registerInsightsRoutes(app: Express) {
   app.get("/api/insights/:traceId", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-
       const cached = await InsightModel.findOne({ traceId }).lean();
       const fresh =
         cached?.computedAt && Date.now() - cached.computedAt < INSIGHT_TTL_MS;
-
       if (cached?.insight && fresh) {
         return res.json({
           ok: true,
@@ -34,23 +41,42 @@ export function registerInsightsRoutes(app: Express) {
           message: `No events found for traceId=${traceId}`
         });
       }
-        const enableAI = process.env.ENABLE_AI_INSIGHTS === "true";
-        if (enableAI) {
-          const key =
-            req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
-          const rl = checkRateLimit(`insight:get:${key}`);
 
-          res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
-          res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
+      const hasError = traceEvents.some(
+        (e: any) => e.level === "error" || e.type === "error"
+      );
+      const statusCode =
+        traceEvents.find((e: any) => e.type === "express")?.payload
+          ?.statusCode ?? undefined;
 
-          if (!rl.ok) {
-            return res.status(429).json({
-              ok: false,
-              error: "RATE_LIMITED",
-              message: "Too many insight requests. Try again soon."
-            });
-          }
+      const sample = shouldSampleInsight({ traceId, hasError, statusCode });
+
+      if (!sample.ok) {
+        const e = apiError(
+          "INSIGHT_SAMPLED_OUT",
+          "AI Insights are disabled for this trace (sampling). Try regenerate or adjust sampling settings.",
+          { status: 503 }
+        );
+        return res.status(e.status).json(e.body);
+      }
+
+      const enableAI = process.env.ENABLE_AI_INSIGHTS === "true";
+      if (enableAI) {
+        const key =
+          req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+        const rl = checkRateLimit(`insight:get:${key}`);
+
+        res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+        res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
+
+        if (!rl.ok) {
+          return res.status(429).json({
+            ok: false,
+            error: "RATE_LIMITED",
+            message: "Too many insight requests. Try again soon."
+          });
         }
+      }
 
       const insight = await buildInsightForTrace(traceId, traceEvents as any, {
         allowFallback: true
@@ -77,7 +103,7 @@ export function registerInsightsRoutes(app: Express) {
   app.post("/api/insights/:traceId/regenerate", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-console.log("[Dashboard] Regenerating insight for trace", traceId);
+      console.log("[Dashboard] Regenerating insight for trace", traceId);
       const traceEvents = await EventModel.find({ traceId })
         .sort({ ts: 1 })
         .lean();
@@ -88,57 +114,56 @@ console.log("[Dashboard] Regenerating insight for trace", traceId);
           message: `No events found for traceId=${traceId}`
         });
       }
-const key = req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
-const rl = checkRateLimit(`insight:regen:${key}`);
+      const key =
+        req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+      const rl = checkRateLimit(`insight:regen:${key}`);
 
-res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
-res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
+      res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
+      res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
 
-if (!rl.ok) {
-  return res.status(429).json({
-    ok: false,
-    error: "RATE_LIMITED",
-    message: "Too many regenerate requests. Try again soon."
-  });
-}
+      if (!rl.ok) {
+        return res.status(429).json({
+          ok: false,
+          error: "RATE_LIMITED",
+          message: "Too many regenerate requests. Try again soon."
+        });
+      }
 
       const insight = await buildInsightForTrace(traceId, traceEvents as any, {
         allowFallback: false
       });
 
-   const computedAt = Date.now();
+      const computedAt = Date.now();
 
-   await InsightModel.updateOne(
-     { traceId },
-     { $set: { traceId, insight, computedAt } },
-     { upsert: true }
-   );
+      await InsightModel.updateOne(
+        { traceId },
+        { $set: { traceId, insight, computedAt } },
+        { upsert: true }
+      );
 
-   return res.json({
-     ok: true,
-     insight,
-     cached: false,
-     computedAt,
-   });
+      return res.json({
+        ok: true,
+        insight,
+        cached: false,
+        computedAt
+      });
+    } catch (err: any) {
+      if (err?.__apiError) {
+        const { code, message, retryAfterMs, status } = err.__apiError;
+        const e = apiError(code, message, {
+          retryAfterMs,
+          status
+        });
+        return res.status(e.status).json(e.body);
+      }
 
+      console.error("[Dashboard] Unhandled insight error", err);
 
-}catch (err: any) {
-  if (err?.__apiError) {
-    const { code, message, retryAfterMs, status } = err.__apiError;
-    const e = apiError(code, message, {
-      retryAfterMs,
-      status
-    });
-    return res.status(e.status).json(e.body);
-  }
-
-  console.error("[Dashboard] Unhandled insight error", err);
-
-  const e = apiError(
-    "INTERNAL_ERROR",
-    "Unexpected error while generating insight."
-  );
-  return res.status(e.status).json(e.body);
-}
+      const e = apiError(
+        "INTERNAL_ERROR",
+        "Unexpected error while generating insight."
+      );
+      return res.status(e.status).json(e.body);
+    }
   });
 }

@@ -23,12 +23,10 @@ This package contains **both**:
 - 📤 Export **currently filtered** traces to JSON
 
 ### AI Insights
-- 🤖 **Server-powered AI insights per trace**
+- 🤖 **Server-powered AI insights per trace (with sampling for production safety)**
 - 🧠 Root cause analysis + signals + suggestions
 - 💾 Cached in MongoDB with freshness window
 - 🔁 **Regenerate** button to force recomputation
-- 🏷️ Fresh vs Cached indicators with computed time
-- ⏱️ Rate-limited regeneration with countdown feedback
 - ❌ Close insight panel independently from trace
 
 ### UX
@@ -61,16 +59,10 @@ Create `packages/dashboard-web/.env.local` for local development:
 OPENAI_API_KEY=your_openai_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
-
-# AI insight behavior
-INSIGHT_TIMEOUT_MS=12000
-INSIGHT_RETRIES=2
-
-# Rate limiting (AI insights)
-AI_RATE_LIMIT_MAX=20
-AI_RATE_LIMIT_WINDOW_MS=60000
-
 MONGODB_URI=mongodb://localhost:27017/syncflow-dashboard
+# AI insight sampling (production safety)
+INSIGHT_SAMPLE_RATE=1.0
+INSIGHT_SAMPLE_MIN_EVENTS=3
 ```
 
 Notes:
@@ -136,8 +128,24 @@ Used by the Dashboard **Demo Mode** button.
 
 - **GET /api/insights/:traceId**<br/>
 Returns cached insight if fresh, otherwise computes and stores a new one.
+
+### Sampling behavior
+
+In some cases, insight generation may be intentionally skipped for
+production safety (sampling).
+
+When this happens, the API returns:
+```json
+{
+  "ok": false,
+  "error": "INSIGHT_SAMPLED_OUT"
+}
+This is not an error — it indicates the trace was excluded by the
+server’s insight sampling policy.
+
 - **POST /api/insights/:traceId/regenerate**<br/>
 Forces recomputation of insight for a trace (used by the **Regenerate** button).
+
 
 If no events exist for a trace, the API returns:
 ```json
@@ -146,24 +154,6 @@ If no events exist for a trace, the API returns:
   "error": "TRACE_NOT_FOUND"
 }
 ```
-
-## ⏱️ AI Rate Limiting
-
-AI insight generation and regeneration are rate-limited to protect the system.
-
-- Rate limits are applied per trace
-- Exposed via response headers:
-  - `X-RateLimit-Remaining`
-  - `X-RateLimit-Reset`
-- When exceeded, the API returns `429 Too Many Requests`
-
-### UI Behavior
-- When rate-limited, the Insight panel shows a live countdown (`Try again in Xs`)
-- Regenerate button is disabled until the reset time
-- Countdown updates every second while rate-limited
-- When not rate-limited, freshness timestamps update in 10s intervals
-
-
 ## 🧪 Demo Mode
 
 Demo Mode:
@@ -189,7 +179,7 @@ Useful for:
   ## 📝 Notes
 - This package is both UI and server — no separate backend needed
 - Designed for **local dev + demo deployments**
-- Authentication, multi-tenancy, and distributed tracing are planned
-- AI insight rate limiting and UI feedback are implemented for production safety
+- AI insight rate limiting and sampling are implemented for production safety
+- Authentication and multi-tenant support are planned
 
 © 2025 Noa Rabin Cohen — MIT License

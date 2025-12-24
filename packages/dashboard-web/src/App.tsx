@@ -400,8 +400,8 @@ const toggleInsight = async (traceId: string) => {
     );
     rl = parseRateLimitHeaders(res.headers);
 
-    const json = await res.json().catch(() => ({}));
 
+    const json = await res.json().catch(() => ({}));
     if (res.status === 429) {
       throw {
         __rateLimited: true,
@@ -410,12 +410,12 @@ const toggleInsight = async (traceId: string) => {
       };
     }
 
-    if (!res.ok || !json?.ok) {
-      throw {
-        message: json?.message ?? "Failed to load insight",
-        rateLimit: rl
-      };
-    }
+   if (!res.ok || !json?.ok) {
+     if (json?.error === "INSIGHT_SAMPLED_OUT") {
+       throw new Error(json?.message ?? "This trace was skipped by sampling.");
+     }
+     throw new Error(json?.message ?? "Failed to load insight");
+   }
 
     setInsightStateMap((m) => ({
       ...m,

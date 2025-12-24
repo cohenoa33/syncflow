@@ -122,6 +122,11 @@ INSIGHT_RETRIES=2
 # AI rate limiting
 AI_RATE_LIMIT_MAX=20
 AI_RATE_LIMIT_WINDOW_MS=60000
+
+# AI insight sampling
+INSIGHT_SAMPLE_RATE=1.0
+INSIGHT_SAMPLE_MIN_EVENTS=3
+
 ```
 ### Production setup (Render)
 Set environment variables in Render:
@@ -129,12 +134,25 @@ Set environment variables in Render:
 - ENABLE_AI_INSIGHTS=true
 - INSIGHT_MODEL=gpt-5.2
 
-Notes:
+### Notes:
 
 - Insights are cached in MongoDB with a TTL-style freshness window (server-side)
 - The UI shows **Fresh vs Cached** indicators with computed timestamps
 - Regeneration is **rate-limited** to protect the system
 - When rate-limited, the UI shows a live countdown until retry is allowed
+
+### Insight sampling (production safety)
+
+In production-like environments, AI insight generation may be **intentionally skipped**
+based on server-side sampling rules.
+
+When this happens:
+- The API returns a non-fatal `INSIGHT_SAMPLED_OUT` response
+- The trace still appears normally in the dashboard
+- No AI call is made for that trace
+
+Sampling behavior is configurable via environment variables and helps control
+costs and load in high-throughput systems.
 
 
 ## 📖 How It Works (Current MVP)
@@ -220,6 +238,7 @@ pnpm clean
   - Cached with freshness window
   - Fresh vs Cached indicators
   - Regenerate with rate limiting + countdown UI
+  - Production-safe insight sampling
 
 
 
@@ -246,11 +265,11 @@ pnpm clean
 - Export JSON
 - Trace persistence (MongoDB)
 
-### 🚧 Phase 3: AI Insights (Near Complete)
+### 🚧 Phase 3: AI Insights (Complete)
 - Server-powered AI insights per trace
 - Cached insights + regenerate endpoint
 - Better model/tooling prompts & structured output validation
-- Rate limiting + sampling for production safety
+- Rate limiting + sampling for production safety (implemented)
 
 ### 🎯 Phase 4: Production Ready (Future)
 - Authentication and multi-tenant support
