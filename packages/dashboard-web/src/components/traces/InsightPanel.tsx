@@ -27,6 +27,12 @@ export function InsightPanel({
   freshnessLabel,
   insight
 }: Props) {
+
+const isSampledOut =
+  insightState.status === "error" &&
+  insightState.code === "INSIGHT_SAMPLED_OUT";
+
+const showSampledOut = isSampledOut && !(rateLimitedNow && retryInSec != null);
   function fmtAgo(ms?: number) {
     if (!ms) return null;
     const diff = Math.max(0, nowMs - ms);
@@ -62,11 +68,17 @@ export function InsightPanel({
                   Rate limited. Try again in{" "}
                   <span className="font-mono">{retryInSec}s</span>.
                 </>
+              ) : showSampledOut ? (
+                <>
+                  {insightState.error}{" "}
+                  <span className="text-gray-500">
+                    (Sampling is enabled — use Regenerate to force compute.)
+                  </span>
+                </>
               ) : (
                 insightState.error
               )}
             </div>
-
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
@@ -78,12 +90,16 @@ export function InsightPanel({
                 title={
                   rateLimitedNow && retryInSec != null
                     ? `Rate limited. Retry in ${retryInSec}s`
-                    : "Retry"
+                    : showSampledOut
+                      ? "Force compute insight for this trace"
+                      : "Retry"
                 }
               >
                 {rateLimitedNow && retryInSec != null
                   ? `Retry (${retryInSec}s)`
-                  : "Retry"}
+                  : showSampledOut
+                    ? "Regenerate"
+                    : "Retry"}
               </button>
 
               <button

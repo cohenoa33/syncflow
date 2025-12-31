@@ -398,24 +398,46 @@ const toggleInsight = async (traceId: string) => {
     const res = await fetch(
       `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
     );
+
     rl = parseRateLimitHeaders(res.headers);
-
-
     const json = await res.json().catch(() => ({}));
+
     if (res.status === 429) {
+      const resetInSec =
+        rl?.resetAt != null
+          ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
+          : undefined;
+
       throw {
         __rateLimited: true,
         rateLimit: rl,
+        resetInSec,
         message: json?.message ?? "Too many insight requests. Try again soon."
       };
     }
 
-   if (!res.ok || !json?.ok) {
-     if (json?.error === "INSIGHT_SAMPLED_OUT") {
-       throw new Error(json?.message ?? "This trace was skipped by sampling.");
-     }
-     throw new Error(json?.message ?? "Failed to load insight");
-   }
+    if (!res.ok || !json?.ok) {
+      if (json?.error === "INSIGHT_SAMPLED_OUT") {
+        setInsightStateMap((m) => ({
+          ...m,
+          [traceId]: {
+            status: "error",
+            code: "INSIGHT_SAMPLED_OUT",
+            error:
+              json?.message ??
+              "AI Insights were skipped for this trace (sampling). Click Regenerate to force.",
+            rateLimit: rl
+          }
+        }));
+        return;
+      }
+
+      throw {
+        message: json?.message ?? "Failed to load insight",
+        code: json?.error,
+        rateLimit: rl
+      };
+    }
 
     setInsightStateMap((m) => ({
       ...m,
@@ -427,14 +449,15 @@ const toggleInsight = async (traceId: string) => {
       }
     }));
   } catch (e: any) {
-    const isRL = !!e?.__rateLimited;
     setInsightStateMap((m) => ({
       ...m,
       [traceId]: {
         status: "error",
-        error: isRL
-          ? "Rate limited. Please try again soon."
-          : (e?.message ?? "Request failed"),
+        code: e?.code,
+        error:
+          e?.__rateLimited && e?.resetInSec != null
+            ? `Rate limited. Try again in ${e.resetInSec}s.`
+            : (e?.message ?? "Request failed"),
         rateLimit: e?.rateLimit ?? rl
       }
     }));
@@ -452,14 +475,20 @@ const regenerateInsight = async (traceId: string) => {
       `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
       { method: "POST" }
     );
-    rl = parseRateLimitHeaders(res.headers);
 
+    rl = parseRateLimitHeaders(res.headers);
     const json = await res.json().catch(() => ({}));
 
     if (res.status === 429) {
+      const resetInSec =
+        rl?.resetAt != null
+          ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
+          : undefined;
+
       throw {
         __rateLimited: true,
         rateLimit: rl,
+        resetInSec,
         message:
           json?.message ?? "Too many regenerate requests. Try again soon."
       };
@@ -468,6 +497,7 @@ const regenerateInsight = async (traceId: string) => {
     if (!res.ok || !json?.ok || !json?.insight) {
       throw {
         message: json?.message ?? "Failed to regenerate insight",
+        code: json?.error,
         rateLimit: rl
       };
     }
@@ -482,14 +512,15 @@ const regenerateInsight = async (traceId: string) => {
       }
     }));
   } catch (e: any) {
-    const isRL = !!e?.__rateLimited;
     setInsightStateMap((m) => ({
       ...m,
       [traceId]: {
         status: "error",
-        error: isRL
-          ? "Rate limited. Please try again soon."
-          : (e?.message ?? "Request failed"),
+        code: e?.code,
+        error:
+          e?.__rateLimited && e?.resetInSec != null
+            ? `Rate limited. Try again in ${e.resetInSec}s.`
+            : (e?.message ?? "Request failed"),
         rateLimit: e?.rateLimit ?? rl
       }
     }));

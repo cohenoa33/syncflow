@@ -5,7 +5,8 @@ export type ApiErrorCode =
   | "AI_INVALID_RESPONSE"
   | "TRACE_NOT_FOUND"
   | "INTERNAL_ERROR"
-  | "INSIGHT_SAMPLED_OUT";
+  | "INSIGHT_SAMPLED_OUT"
+  | "AI_DISABLED";
 
 export function apiError(
   code: ApiErrorCode,

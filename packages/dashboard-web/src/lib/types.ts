@@ -38,7 +38,7 @@ export type RateLimitMeta = {
 export type InsightState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "error"; error: string; rateLimit?: RateLimitMeta }
+  | { status: "error"; error: string; code?: string; rateLimit?: RateLimitMeta }
   | {
       status: "ready";
       data: any;
