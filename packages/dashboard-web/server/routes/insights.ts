@@ -78,7 +78,7 @@ app.get("/api/insights/:traceId", async (req, res) => {
       if (!rl.ok) {
         return res.status(429).json({
           ok: false,
-          error: "RATE_LIMITED",
+          error: "AI_RATE_LIMITED",
           message: "Too many insight requests. Try again soon."
         });
       }
@@ -144,7 +144,7 @@ app.get("/api/insights/:traceId", async (req, res) => {
      if (!rl.ok) {
        return res.status(429).json({
          ok: false,
-         error: "RATE_LIMITED",
+         error: "AI_RATE_LIMITED",
          message: "Too many regenerate requests. Try again soon."
        });
      }
@@ -159,7 +159,6 @@ app.get("/api/insights/:traceId", async (req, res) => {
      await InsightModel.updateOne(
        { traceId },
        { $set: { traceId, insight, computedAt } },
-       { upsert: true }
      );
 
      return res.json({

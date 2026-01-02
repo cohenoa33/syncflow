@@ -287,7 +287,7 @@ pnpm clean
 - Distributed tracing for microservices
 - Historical metrics dashboards
 - Alerting and notifications
-- Production-safe sampling and rate limiting
+
 
 
 ## 🤝 Contributing

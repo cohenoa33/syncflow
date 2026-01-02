@@ -65,6 +65,10 @@ MONGODB_URI=mongodb://localhost:27017/syncflow-dashboard
 # AI insight sampling (dev/prod)
 AI_INSIGHT_SAMPLE_RATE=1
 AI_INSIGHT_SAMPLE_ERRORS_ONLY=false
+
+# AI rate limiting
+AI_RATE_LIMIT_MAX=20
+AI_RATE_LIMIT_WINDOW_MS=60000
 ```
 
 Notes:
@@ -72,7 +76,7 @@ Notes:
 - `.env` is used in production
 -  **Never commit API keys**
 - `AI_INSIGHT_SAMPLE_RATE` is a number between 0–1 (e.g. 0.25 = 25% of traces sampled).
-- `If AI_INSIGHT_SAMPLE_ERRORS_ONLY=true`, only traces with errors are eligible for sampling/generation.
+- If `AI_INSIGHT_SAMPLE_ERRORS_ONLY=true`, only traces with errors are eligible for sampling/generation.
 
 ## 🏗️ Build (Production)
 ```bash
@@ -144,6 +148,7 @@ When this happens, the API returns:
   "ok": false,
   "error": "INSIGHT_SAMPLED_OUT"
 }
+```
 This is not an error — it indicates the trace was excluded by the
 server’s insight sampling policy.
 

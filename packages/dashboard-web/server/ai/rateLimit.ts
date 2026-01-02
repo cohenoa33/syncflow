@@ -31,7 +31,6 @@ export function checkRateLimit(key: string) {
   };
 }
 
-// optional: keep map from growing forever
 setInterval(() => {
   const t = now();
   for (const [k, b] of Array.from(buckets)) if (t >= b.resetAt) buckets.delete(k);
