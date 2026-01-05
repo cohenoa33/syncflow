@@ -61,7 +61,8 @@ OPENAI_API_KEY=your_openai_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
 MONGODB_URI=mongodb://localhost:27017/syncflow-dashboard
-
+DASHBOARD_API_KEY=your_api_key #(server)
+VITE_DASHBOARD_API_KEY=your_api_key #(client)
 # AI insight sampling (dev/prod)
 AI_INSIGHT_SAMPLE_RATE=1
 AI_INSIGHT_SAMPLE_ERRORS_ONLY=false

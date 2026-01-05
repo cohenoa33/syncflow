@@ -5,14 +5,29 @@ import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
 
 export function attachSocketServer(httpServer: HttpServer) {
- const io = new Server(httpServer, {
-   cors: {
-     origin: "*",
-     methods: ["GET", "POST"],
-     exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
-   }
- });
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+      exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
+    }
+  });
+  // 🔐 AUTH MIDDLEWARE 
+  io.use((socket, next) => {
+    const expected = process.env.DASHBOARD_API_KEY;
+    if (!expected) return next(); // optional dev bypass
 
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers.authorization?.replace("Bearer ", "") ||
+      socket.handshake.query?.token;
+
+    if (!token || token !== expected) {
+      return next(new Error("UNAUTHORIZED"));
+    }
+
+    next();
+  });
   io.on("connection", (socket) => {
     console.log("[Dashboard] Client connected:", socket.id);
 

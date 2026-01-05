@@ -8,6 +8,7 @@ import { registerTracesRoutes } from "./routes/traces";
 import { registerDemoRoutes } from "./routes/demo";
 import { registerInsightsRoutes } from "./routes/insights";
 import { serveStaticUi } from "./static";
+import { requireApiKey } from "./auth";
 
 async function main() {
   await connectMongo().catch((err) => {
@@ -16,19 +17,20 @@ async function main() {
   });
 
   const app = express();
- app.use(
-   cors({
-     origin: "*",
-     exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
-   })
- );
+  app.use(
+    cors({
+      origin: "*",
+      exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
+    })
+  );
   app.use(express.json());
+  app.use("/api", requireApiKey);
 
   const httpServer = createServer(app);
   const io = attachSocketServer(httpServer);
 
-  registerTracesRoutes(app, io);
   registerDemoRoutes(app, io);
+  registerTracesRoutes(app, io);
   registerInsightsRoutes(app);
 
   serveStaticUi(app);

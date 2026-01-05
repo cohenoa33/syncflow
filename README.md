@@ -118,6 +118,9 @@ OPENAI_API_KEY=your_key_here
 ENABLE_AI_INSIGHTS=true
 INSIGHT_MODEL=gpt-5.2
 
+DASHBOARD_API_KEY=your_api_key #(server)
+VITE_DASHBOARD_API_KEY=your_api_key #(client)
+
 # AI insight behavior
 INSIGHT_TIMEOUT_MS=12000
 INSIGHT_RETRIES=2
@@ -133,9 +136,13 @@ AI_INSIGHT_SAMPLE_ERRORS_ONLY=false
 ```
 ### Production setup (Render)
 Set environment variables in Render:
+```.env
 - OPENAI_API_KEY
 - ENABLE_AI_INSIGHTS=true
 - INSIGHT_MODEL=gpt-5.2
+
+- DASHBOARD_API_KEY=your_api_key #(server)
+- VITE_DASHBOARD_API_KEY=your_api_key #(client)
 
 - AI_RATE_LIMIT_MAX=20 (or whatever you want)
 - AI_RATE_LIMIT_WINDOW_MS=60000
@@ -143,6 +150,7 @@ Set environment variables in Render:
 - AI_INSIGHT_SAMPLE_RATE=0.2 (example: 20% sampling in prod)
 - AI_INSIGHT_SAMPLE_ERRORS_ONLY=true (recommended for prod)
 
+```
 
 
 ### Notes:

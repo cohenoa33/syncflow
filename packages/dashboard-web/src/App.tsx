@@ -12,6 +12,7 @@ import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
+import { authHeaders } from "./lib/api";
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -51,7 +52,9 @@ export default function App() {
     (async () => {
       try {
         setLoadingHistory(true);
-        const res = await fetch(`${API_BASE}/api/traces`);
+        const res = await fetch(`${API_BASE}/api/traces`, {
+          headers: authHeaders()
+        });
         const data: Event[] = await res.json();
         const ordered = [...data].sort((a, b) => a.ts - b.ts);
 
@@ -68,8 +71,12 @@ export default function App() {
       }
     })();
 
-    const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+const token = import.meta.env.VITE_DASHBOARD_API_KEY;
 
+const socket = io(SOCKET_URL, {
+  transports: ["websocket", "polling"],
+  auth: token ? { token } : undefined
+});
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
 
@@ -296,7 +303,7 @@ export default function App() {
     setTraceOpenMap({});
 
     try {
-      await fetch(`${API_BASE}/api/traces`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/traces`, { method: "DELETE", headers: authHeaders() });
     } catch (err) {
       console.error("[Dashboard] failed to clear traces", err);
     }
@@ -304,15 +311,14 @@ export default function App() {
 
   const runDemo = async () => {
     try {
-      await fetch(`${API_BASE}/api/traces`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/traces`, { method: "DELETE", headers: authHeaders() });
 
       setEvents([]);
       setOpenMap({});
       setTraceOpenMap({});
 
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",  headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           apps: ["mern-sample-app", "mern-sample-app-2"]
         })
@@ -324,7 +330,7 @@ export default function App() {
         traceIdsByApp?: Record<string, string[]>;
       } = await res.json();
 
-      const eventsRes = await fetch(`${API_BASE}/api/traces`);
+      const eventsRes = await fetch(`${API_BASE}/api/traces`, { headers: authHeaders() });
       const data: Event[] = await eventsRes.json();
       const ordered = [...data].sort((a, b) => a.ts - b.ts);
       setEvents(ordered);
@@ -396,7 +402,8 @@ const toggleInsight = async (traceId: string) => {
 
   try {
     const res = await fetch(
-      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`
+      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`,
+      { headers: authHeaders() }
     );
 
     rl = parseRateLimitHeaders(res.headers);
@@ -473,7 +480,7 @@ const regenerateInsight = async (traceId: string) => {
   try {
     const res = await fetch(
       `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
-      { method: "POST" }
+      { method: "POST", headers: authHeaders() }
     );
 
     rl = parseRateLimitHeaders(res.headers);
