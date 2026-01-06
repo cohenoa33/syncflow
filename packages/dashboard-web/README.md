@@ -182,9 +182,9 @@ Useful for:
 ## 📦 Related Packages
 
 
-  - [@syncflow/agent-node￼](./packages/agent-node/README.md) node￼ — MERN instrumentation agent
-  - [examples/mern-sample-app](./examples/mern-sample-app/README.md) - Demo backend
-  - [examples/mern-sample-app-2](./examples/mern-sample-app-2/README.md) - Second demo backend
+[@syncflow/agent-node](../../packages/agent-node/README.md)
+[examples/mern-sample-app](../../examples/mern-sample-app/README.md)
+[examples/mern-sample-app-2](../../examples/mern-sample-app-2/README.md)
 
   ## 📝 Notes
 - This package is both UI and server — no separate backend needed

@@ -1,12 +1,15 @@
-// examples/mern-sample-app/src/index.ts
 
 import express from "express";
 import mongoose from "mongoose";
 import { SyncFlowAgent } from "@syncflow/agent-node";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
 
+console.log("🔧 Setting up SyncFlow Agent...", process.env.MONGODB_URI);
 // MongoDB connection
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/syncflow-demo";
@@ -16,20 +19,17 @@ mongoose
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ✅ Copilot/Step-5 agent API (auto instrumentation)
 const agent = new SyncFlowAgent({
-  dashboardUrl: "http://localhost:5050",
-  appName: "mern-sample-app"
+  dashboardUrl: process.env.SYNCFLOW_DASHBOARD_SOCKET_URL,
+  appName: process.env.SYNCFLOW_APP_NAME,
+  agentKey: process.env.SYNCFLOW_AGENT_KEY
 });
-
-agent.connect();
-agent.instrumentMongoose(mongoose);
-
-agent.connect();
-agent.instrumentExpress(app);
 
 // ✅ IMPORTANT: instrument mongoose BEFORE defining models
 agent.instrumentMongoose(mongoose);
+agent.instrumentExpress(app);
+agent.connect();
+
 
 // Define User model (now hooks will attach)
 const userSchema = new mongoose.Schema({

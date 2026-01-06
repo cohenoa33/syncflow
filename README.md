@@ -42,20 +42,16 @@ If you already created it:
 docker start syncflow-mongo
 ```
 
-### Terminal 2: Start SyncFlow WebSocket Server
+  
+### Terminal 2:  Terminal 2: Start SyncFlow Dashboard (UI + Server)
 ```bash
 pnpm -C packages/agent-node build
 cd packages/dashboard-web
-pnpm dev:server
-```
-- Server (Socket + API): http://localhost:5050
-
-  
-### Terminal 3: Start SyncFlow Dashboard UI
-```bash
-cd packages/dashboard-web
 pnpm dev
 ```
+This runs both:
+Dashboard UI: http://localhost:5173
+Socket/API server: http://localhost:5050
 
 #### Ports
 - Dashboard UI: http://localhost:5173
@@ -63,14 +59,14 @@ pnpm dev
 - Persisted traces API: http://localhost:5050/api/traces
 
 
-### Terminal 4: Start Sample MERN App(s)
-App 1 (port 4000):
+### Terminal 3: Start Sample MERN App 1 (port 4000)
 ```bash
 cd examples/mern-sample-app
 pnpm dev
 ```
 
-App 2 (port 4001) (optional but recommended for multi-app testing):
+### Terminal 4: Start Sample MERN App 2 (port 4001)
+(optional but recommended for multi-app testing)
 ```bash
 cd examples/mern-sample-app-2
 pnpm dev
@@ -235,6 +231,7 @@ pnpm clean
 - [Dashboard Web](./packages/dashboard-web/README.md) -  React dashboard + Socket.IO server + API
 - [MERN Sample App](./examples/mern-sample-app/README.md) - Demo backend (port 4000)
 - [MERN Sample App 2](./examples/mern-sample-app-2/README.md) - Demo backend (port 4001)
+
 
 # ✅ What’s Implemented (so far)
 ### Agent

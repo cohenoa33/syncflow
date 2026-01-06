@@ -6,7 +6,9 @@ import { SyncFlowAgent } from "@syncflow/agent-node";
 
 const app = express();
 app.use(express.json());
+import dotenv from "dotenv";
 
+dotenv.config();
 // MongoDB connection
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/syncflow-demo-2";
@@ -15,12 +17,12 @@ mongoose
   .connect(MONGODB_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
-
-// ✅ Copilot/Step-5 agent API (auto instrumentation)
 const agent = new SyncFlowAgent({
-  dashboardUrl: "http://localhost:5050",
-  appName: "mern-sample-app-2"
+  dashboardUrl: process.env.SYNCFLOW_DASHBOARD_SOCKET_URL,
+  appName: process.env.SYNCFLOW_APP_NAME,
+  agentKey: process.env.SYNCFLOW_AGENT_KEY
 });
+
 
 agent.connect();
 agent.instrumentMongoose(mongoose);
