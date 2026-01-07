@@ -35,38 +35,39 @@ export function attachSocketServer(httpServer: HttpServer) {
     socket.data.registered = false;
     socket.data.appName = undefined as string | undefined;
     console.log(
-      "[Dashboard] Client connected:",
+      "[Dashboard] Client connected,:",
       socket.id,
-      socket.data
+      " register attempt..."
     );
     socket.on("register", (data) => {
       const appName = data?.appName;
       const token = data?.token;
 
-      console.log("[Dashboard] register:", socket.id,data, {
+      console.log("[Dashboard] register:", socket.id, {
         appName,
         hasToken: !!token,
       });
 
       if (!appName || typeof appName !== "string") {
         socket.emit("auth_error", { ok: false, error: "MISSING_APP_NAME" });
+              console.warn(
+                "[Dashboard] Unauthorized agent:",
+                socket.id,
+                " [MISSING_APP_NAME]"
+              );
         socket.disconnect(true);
         return;
       }
 
       if (REQUIRE_AUTH) {
         const expected = AGENT_KEYS[appName];
-        console.log(
-          "[Dashboard] Authenticating agent:",
-          socket.id,
-          appName,expected===token,
-        );
+    
         if (!expected || token !== expected) {
           console.warn("[Dashboard] Unauthorized agent:", socket.id, appName);
           socket.emit("auth_error", { ok: false, error: "UNAUTHORIZED" });
           socket.disconnect(true);
           return;
-        }
+        } 
       }
 
       // ✅ mark as authenticated + registered
