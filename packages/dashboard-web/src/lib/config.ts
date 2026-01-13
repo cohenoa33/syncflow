@@ -1,4 +1,3 @@
-// packages/dashboard-web/src/lib/config.ts
 const rawApiBase = import.meta.env.VITE_API_BASE as string | undefined;
 const rawSocketUrl = import.meta.env.VITE_SOCKET_URL as string | undefined;
 

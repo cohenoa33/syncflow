@@ -19,19 +19,24 @@ const EventSchema = new mongoose.Schema(
     durationMs: Number,
     level: String,
     payload: mongoose.Schema.Types.Mixed,
-    receivedAt: Number
+    receivedAt: Number,
+    tenantId: { type: String, required: true, index: true },
   },
   { timestamps: true }
 );
+EventSchema.index({ tenantId: 1, traceId: 1, ts: 1 });
 
 const InsightSchema = new mongoose.Schema(
   {
-    traceId: { type: String, required: true, unique: true, index: true },
+    tenantId: { type: String, required: true, index: true },
+    traceId: { type: String, required: true, index: true },
     insight: mongoose.Schema.Types.Mixed,
     computedAt: { type: Number, required: true, index: true }
   },
   { timestamps: true }
 );
+
+InsightSchema.index({ tenantId: 1, traceId: 1 }, { unique: true });
 
 export const EventModel = mongoose.model("SyncFlowEvent", EventSchema);
 export const InsightModel = mongoose.model("SyncFlowInsight", InsightSchema);

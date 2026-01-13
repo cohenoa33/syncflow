@@ -6,6 +6,7 @@ export interface SyncFlowAgentOptions {
   appName?: string;
   slowMsThreshold?: number;
   agentKey?: string;
+  tenantId?: string;
 }
 
 export type SyncFlowEventType = "express" | "mongoose" | "error";
@@ -18,7 +19,7 @@ export interface SyncFlowEvent {
   operation: string;
   ts: number;
   durationMs?: number;
-  traceId?: string; 
+  traceId?: string;
   level: SyncFlowEventLevel;
   payload: Record<string, any>;
 }
@@ -128,6 +129,7 @@ export class SyncFlowAgent {
   private connected = false;
   private slowMsThreshold: number;
   private agentKey: string | undefined;
+  private tenantId?: string ;
 
   private als = new AsyncLocalStorage<{ traceId: string }>();
 
@@ -135,11 +137,13 @@ export class SyncFlowAgent {
     return this.als.getStore()?.traceId;
   }
 
+
   constructor(options: SyncFlowAgentOptions = {}) {
     this.dashboardUrl = options.dashboardUrl || "http://localhost:5050";
     this.appName = options.appName || "unnamed-app";
     this.slowMsThreshold = options.slowMsThreshold ?? 500;
     this.agentKey = options.agentKey;
+    this.tenantId = options.tenantId;
   }
 
   connect(): void {
@@ -156,11 +160,12 @@ export class SyncFlowAgent {
 
     this.socket.on("connect", () => {
       this.connected = true;
-      console.log("[SyncFlow]! Connected to dashboard at", this.dashboardUrl);
-    this.socket?.emit("register", {
-     appName: this.appName,
-     token: this.agentKey
-   });
+      console.log("[SyncFlow] Connected to dashboard at", this.dashboardUrl);
+      this.socket?.emit("register", {
+        appName: this.appName,
+        token: this.agentKey,
+        tenantId: this.tenantId
+      });
     });
 
     this.socket.on("disconnect", () => {
@@ -230,9 +235,10 @@ export class SyncFlowAgent {
 
           try {
             if (body != null) {
-              const asString =
-                typeof body === "string" ? body : JSON.stringify(body);
-              responseSize = asString.length;
+              responseSize =
+                typeof body === "string"
+                  ? body.length
+                  : JSON.stringify(body).length;
             }
           } catch {
             responseSize = undefined;
@@ -295,6 +301,7 @@ export class SyncFlowAgent {
           this._syncflowStartTime = Date.now();
         });
 
+        // Success path
         schema.post(op, function (this: any, doc: any, next: any) {
           const start = this._syncflowStartTime || Date.now();
           const durationMs = Date.now() - start;
@@ -356,11 +363,8 @@ export class SyncFlowAgent {
           if (typeof next === "function") next();
         });
 
-        schema.post(op, function (this: any, _doc: any, next: any) {
-          if (typeof next === "function") next();
-        });
-
-        schema.post(op, function (this: any, _doc: any, err: any, next: any) {
+        // Error path
+        schema.post(op, function (this: any, err: any, next: any) {
           if (!err) return next?.();
 
           const start = this._syncflowStartTime || Date.now();

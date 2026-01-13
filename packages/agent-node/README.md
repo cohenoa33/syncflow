@@ -41,6 +41,7 @@ const agent = new SyncFlowAgent({
   dashboardUrl: "http://localhost:5050",
   appName: "my-mern-app",
   slowMsThreshold: 500, // optional
+  tenantId: "tenant-id
 });
 
 agent.connect();

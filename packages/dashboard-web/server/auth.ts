@@ -3,8 +3,8 @@ import type { Request, Response, NextFunction } from "express";
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.DASHBOARD_API_KEY;
 
-
-//   if (!expected) return next();
+  // Allow access if API key is not configured
+  if (!expected) return next();
 
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ")

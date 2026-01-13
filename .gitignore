@@ -49,3 +49,6 @@ ENV/
 env/
 .pytest_cache/
 .mypy_cache/
+
+# SyncFlow hidden apps
+mern-sample-app-hidden/

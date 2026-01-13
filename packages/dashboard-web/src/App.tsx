@@ -71,18 +71,32 @@ export default function App() {
       }
     })();
 
-const token = import.meta.env.VITE_DASHBOARD_API_KEY;
+const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
 
 const socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"],
-  auth: token ? { token } : undefined
+  auth: {
+    token: token?.trim(),
+    tenantId: import.meta.env.VITE_TENANT_ID || "local"
+  }
 });
-    socket.on("connect", () => setConnected(true));
+  socket.on("connect", () => {
+    setConnected(true);
+    const tenantId =
+      (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim() || "local";
+
+    socket.emit("join_tenant", { tenantId });
+  });
     socket.on("disconnect", () => setConnected(false));
 
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
+        console.log("[socket event]", {
+          app: event.appName,
+          tenantId: (event as any).tenantId
+        });
+
       setEvents((prev) => [...prev, event].slice(-1000));
       setOpenMap((m) => ({ ...m, [event.id]: false }));
 

@@ -1,5 +1,3 @@
-// examples/mern-sample-app-2/src/index.ts
-
 import express from "express";
 import mongoose from "mongoose";
 import { SyncFlowAgent } from "@syncflow/agent-node";
@@ -20,15 +18,13 @@ mongoose
 const agent = new SyncFlowAgent({
   dashboardUrl: process.env.SYNCFLOW_DASHBOARD_SOCKET_URL,
   appName: process.env.SYNCFLOW_APP_NAME,
-  agentKey: process.env.SYNCFLOW_AGENT_KEY
+  agentKey: process.env.SYNCFLOW_AGENT_KEY,
+  tenantId: process.env.SYNCFLOW_TENANT_ID
 });
 
-
-agent.connect();
-agent.instrumentMongoose(mongoose);
-
-agent.connect();
 agent.instrumentExpress(app);
+agent.instrumentMongoose(mongoose);
+agent.connect();
 
 // ✅ IMPORTANT: instrument mongoose BEFORE defining models
 agent.instrumentMongoose(mongoose);
