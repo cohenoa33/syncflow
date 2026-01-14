@@ -1,113 +1,144 @@
 # MERN Sample App
 
-Second example application demonstrating **SyncFlow agent integration** with a MERN stack backend.
+A minimal **Express + Mongoose** backend demonstrating automatic trace capture via the SyncFlow agent. Real-time instrumentation of HTTP requests and database operations.
 
-This app exists to validate **multi-app tracing** in the SyncFlow dashboard alongside `mern-sample-app-2`.
-
-> ⚠️ **Development / demo only**  
-> This app is intentionally minimal and does **not** include production features such as authentication, validation, or rate limiting.
+> **Development / demo only** — intentionally minimal, no production features.
 
 ---
 
-## Purpose
+## Quickstart
 
-- Demonstrate **multiple apps** streaming traces into the same SyncFlow dashboard
-- Validate **app-level filtering** in the UI
-- Show trace separation by `appName` and `traceId`
+**Prerequisites:** Node.js 16+, MongoDB running locally
 
----
-
-## Features
-
-- Express REST API
-- Mongoose models and database operations
-- SyncFlow agent auto-instrumentation:
-  - Express requests
-  - Mongoose operations
-- Automatic trace correlation (Express → Mongoose)
-- No manual `emit()` calls required
-
----
-
-## Ports & Databases
-
-| Item | Value |
-|----|----|
-| App port | **4000** |
-| MongoDB | `syncflow-demo` |
-| Dashboard | http://localhost:5173 |
-| Socket server | http://localhost:5050 |
-
----
-
-## Setup
-
-### 1. Ensure MongoDB is running
-Local or Docker:
 ```bash
-docker start syncflow-mongo
-```
+# 1. Install dependencies
+pnpm install
 
-### 2. Run the app
-From the app directory:
-```bash
+# 2. Start MongoDB (if not running)
+brew services start mongodb-community
+# or: docker run -d -p 27017:27017 mongo:latest
+
+# 3. Start the app
 pnpm dev
 ```
 
-The app will:
-- Start on **port 4000**
-- Connect to its own MongoDB database
-- Automatically stream events to the SyncFlow dashboard
+Server runs on `http://localhost:4000`. Test:
 
-## API Endpoints
-Test with curl or Postman:
-- GET `/api/users` — List users
-- POST `/api/users` — Create user
-
-```json 
-{ "name": "Jane", "email": "jane@test.com" }
+```bash
+curl http://localhost:4000/api/users
 ```
 
-- GET `/api/users/:id` — Get user
-- PUT `/api/users/:id` — Update user
-- DELETE /`api/users/:id` — Delete user
+---
 
-Each request produces:
-- An Express event
-- One or more Mongoose events
-- A single correlated trace in the dashboard
+## Configuration
 
-## Multi-App Demo
+Environment variables are loaded from `.env` via `dotenv.config()`. **Never commit secrets.**
 
+| Variable                        | Required | Default                                   | Purpose                      |
+| ------------------------------- | -------- | ----------------------------------------- | ---------------------------- |
+| `SYNCFLOW_APP_NAME`             | Yes      | (none)                                    | Display name in traces       |
+| `SYNCFLOW_DASHBOARD_SOCKET_URL` | No       | `http://localhost:5050`                   | Dashboard WebSocket endpoint |
+| `SYNCFLOW_AGENT_KEY`            | No       | (none)                                    | Optional API key for agent   |
+| `SYNCFLOW_TENANT_ID`            | No       | (none)                                    | Multi-tenant identifier      |
+| `MONGODB_URI`                   | No       | `mongodb://localhost:27017/syncflow-demo` | MongoDB connection           |
+| `PORT`                          | No       | `4000`                                    | Express server port          |
 
+See [.env](./.env) for current values.
 
-Run **both** sample apps simultaneously:
+---
 
-| App               | Port | App Name            |
-|-------------------|------|---------------------|
-| mern-sample-app   | 4000 | mern-sample-app     |
-| mern-sample-app-2 | 4001 | mern-sample-app-2   |
+## Scripts
 
-### In the dashboard:
-- Use **Application chips** to filter traces by app
-- Verify traces remain isolated per app
-- Compare performance and error behavior across apps
+| Script       | Command                  | Purpose                    |
+| ------------ | ------------------------ | -------------------------- |
+| `pnpm dev`   | `tsx watch src/index.ts` | Watch mode with hot reload |
+| `pnpm start` | `tsx src/index.ts`       | Run once                   |
 
+---
 
+## API Endpoints
 
-### Important Notes
-- `agent.instrumentMongoose(mongoose)` must run before defining Mongoose models
-- This app intentionally mirrors the first sample app with a separate:
-    -  Port
-    -  Database
-    -  appName
+| Method   | Path             | Notes                                                  |
+| -------- | ---------------- | ------------------------------------------------------ |
+| `GET`    | `/api/users`     | List all users                                         |
+| `POST`   | `/api/users`     | Create user: `{"name":"Jane","email":"jane@test.com"}` |
+| `GET`    | `/api/users/:id` | Get by ID                                              |
+| `PUT`    | `/api/users/:id` | Update user                                            |
+| `DELETE` | `/api/users/:id` | Delete user                                            |
 
-⸻
+Each request produces **one correlated trace** in the dashboard (Express + Mongoose events linked by `traceId`).
 
-### Related
+---
 
-- [@syncflow/agent-node￼](./packages/agent-node/README.md) 
-- [@syncflow/dashboard-web](./packages/dashboard-web/README.md)
-- [MERN Sample App 2](./examples/mern-sample-app-2/README.md) 
+## Architecture
 
-© 2025 Noa Rabin Cohen
+### Data Flow
+
+```
+HTTP Request → Express Middleware (captured) → Handler → Mongoose Query (captured)
+    ↓ MongoDB → Response → SyncFlow Agent bundles events → Dashboard
+```
+
+### Key Files
+
+- **[src/index.ts](./src/index.ts)** — Express app, SyncFlow agent init, /api/users CRUD routes
+- **[package.json](./package.json)** — dependencies, scripts
+- **[tsconfig.json](./tsconfig.json)** — TypeScript compiler config
+- **.env** — configuration (loaded at startup via dotenv)
+
+### Important: Instrumentation Order
+
+`agent.instrumentMongoose(mongoose)` **must run before defining models**:
+
+```typescript
+// ✅ CORRECT
+agent.instrumentMongoose(mongoose);
+const User = mongoose.model("User", schema);
+
+// ❌ WRONG
+const User = mongoose.model("User", schema);
+agent.instrumentMongoose(mongoose);
+```
+
+---
+
+## Local Development
+
+### Verify the app is running
+
+```bash
+# Check health
+curl http://localhost:4000/
+
+# List users
+curl http://localhost:4000/api/users
+
+# Create a user
+curl -X POST http://localhost:4000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice","email":"alice@example.com"}'
+```
+
+### Common issues
+
+| Issue                     | Solution                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Port 4000 in use**      | Kill: `lsof -i :4000 \| grep -v PID \| awk '{print $2}' \| xargs kill -9` or set `PORT=` in .env |
+| **MongoDB won't connect** | Start: `brew services start mongodb-community` or `docker run -d -p 27017:27017 mongo:latest`    |
+| **Module errors**         | Run: `pnpm install`                                                                              |
+
+---
+
+## Notes
+
+- This app is **standalone** and does not require the monorepo. All dependencies are in `package.json`.
+- Environment variables are read from `.env` at startup via `dotenv.config()`.
+- **SYNCFLOW_APP_NAME** is the only required environment variable (no default).
+- The app logs to stdout. Look for "✅ Connected to MongoDB" and "🚀 Server running" messages.
+- Trace capture behavior depends on the `@syncflow/agent-node` package, which is installed as a workspace dependency.
+
+---
+
+## License
+
+See [LICENSE](../../LICENSE) in repository root.
