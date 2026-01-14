@@ -14,7 +14,6 @@ type Props = {
   onCopyPayload: (event: Event) => void;
   anyPayloadClosed: boolean;
   onToggleAllPayloads: () => void;
-  onToggleAppFromTrace: (appName: string) => void;
   toggleInsight: (traceId: string) => void;
   insightStateMap: Record<string, InsightState>;
   insightOpenMap: Record<string, boolean>;
@@ -35,42 +34,13 @@ export function TraceList({
   onCopyPayload,
   anyPayloadClosed,
   onToggleAllPayloads,
-  onToggleAppFromTrace,
   toggleInsight,
   insightOpenMap,
   insightStateMap,
   setInsightOpenMap,
   onRegenerateInsight
 }: Props) {
-//  function fmtAgo(ms?: number) {
-//    if (!ms) return null;
-//    const diff = Math.max(0, nowMs - ms);
-//    const s = Math.floor(diff / 1000);
-//    if (s < 60) return `${s}s ago`;
-//    const m = Math.floor(s / 60);
-//    return `${m}m ago`;
-//  }
 
-//   const getTypeBadgeClasses = (type: Event["type"]) =>
-//     type === "express"
-//       ? "bg-blue-100 text-blue-800"
-//       : type === "mongoose"
-//         ? "bg-green-100 text-green-800"
-//         : "bg-red-100 text-red-800";
-
-//   const getLevelBadgeClasses = (level: Event["level"]) =>
-//     level === "info"
-//       ? "bg-slate-100 text-slate-700"
-//       : level === "warn"
-//         ? "bg-amber-100 text-amber-800"
-//         : "bg-rose-100 text-rose-800";
-
-//   const getSeverityBadge = (sev: "info" | "warn" | "error") =>
-//     sev === "error"
-//       ? "bg-rose-100 text-rose-800"
-//       : sev === "warn"
-//         ? "bg-amber-100 text-amber-800"
-//         : "bg-slate-100 text-slate-700";
 
   const [, forceTick] = useState(0);
   useEffect(() => {
@@ -196,7 +166,6 @@ export function TraceList({
                 onToggleTrace={onToggleTrace}
                 onTogglePayload={onTogglePayload}
                 onCopyPayload={onCopyPayload}
-                onToggleAppFromTrace={onToggleAppFromTrace}
                 toggleInsight={toggleInsight}
                 setInsightOpenMap={setInsightOpenMap}
                 onRegenerateInsight={onRegenerateInsight}

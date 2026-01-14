@@ -23,7 +23,6 @@ export default function App() {
     "all" | "express" | "mongoose" | "error"
   >("all");
 
-
   const [allAppsSelected, setAllAppsSelected] = useState(true);
   const [selectedApps, setSelectedApps] = useState<Set<string>>(new Set());
 
@@ -36,7 +35,6 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [showSlowOnly, setShowSlowOnly] = useState(false);
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
-
 
   const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
     {}
@@ -71,31 +69,32 @@ export default function App() {
       }
     })();
 
-const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
+    const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
 
-const socket = io(SOCKET_URL, {
-  transports: ["websocket", "polling"],
-  auth: {
-    token: token?.trim(),
-    tenantId: import.meta.env.VITE_TENANT_ID || "local"
-  }
-});
-  socket.on("connect", () => {
-    setConnected(true);
-    const tenantId =
-      (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim() || "local";
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      auth: {
+        token: token?.trim(),
+        tenantId: import.meta.env.VITE_TENANT_ID || "local"
+      }
+    });
+    socket.on("connect", () => {
+      setConnected(true);
+      const tenantId =
+        (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim() ||
+        "local";
 
-    socket.emit("join_tenant", { tenantId });
-  });
+      socket.emit("join_tenant", { tenantId });
+    });
     socket.on("disconnect", () => setConnected(false));
 
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
-        console.log("[socket event]", {
-          app: event.appName,
-          tenantId: (event as any).tenantId
-        });
+      console.log("[socket event]", {
+        app: event.appName,
+        tenantId: (event as any).tenantId
+      });
 
       setEvents((prev) => [...prev, event].slice(-1000));
       setOpenMap((m) => ({ ...m, [event.id]: false }));
@@ -142,7 +141,6 @@ const socket = io(SOCKET_URL, {
     });
   }, [appOptions, allAppsSelected]);
 
-
   const toggleApp = (appName: string) => {
     // "ALL" -> first unselect becomes "all except clicked"
     if (allAppsSelected) {
@@ -185,6 +183,25 @@ const socket = io(SOCKET_URL, {
     if (filter === "error") return out.filter((e) => e.level === "error");
     return out.filter((e) => e.type === filter);
   }, [events, filter, allAppsSelected, selectedApps]);
+
+  // Calculate filter counts based on app-filtered events (before type filtering)
+  const appFilteredEvents = useMemo(() => {
+    let out = events;
+    if (!allAppsSelected) {
+      if (selectedApps.size === 0) return [];
+      out = out.filter((e) => selectedApps.has(e.appName));
+    }
+    return out;
+  }, [events, allAppsSelected, selectedApps]);
+
+  const filterCounts = useMemo(() => {
+    return {
+      all: appFilteredEvents.length,
+      express: appFilteredEvents.filter((e) => e.type === "express").length,
+      mongoose: appFilteredEvents.filter((e) => e.type === "mongoose").length,
+      error: appFilteredEvents.filter((e) => e.level === "error").length
+    };
+  }, [appFilteredEvents]);
 
   const traceGroups: TraceGroup[] = useMemo(() => {
     return groupEventsIntoTraces(filteredEvents);
@@ -241,11 +258,11 @@ const socket = io(SOCKET_URL, {
         for (const e of g.events) next[e.id] = false;
       return { ...m, ...next };
     });
-      setTraceOpenMap((m) => {
-        const next: Record<string, boolean> = {};
-        for (const g of filteredTraceGroups) next[g.traceId] = false;
-        return { ...m, ...next };
-      });
+    setTraceOpenMap((m) => {
+      const next: Record<string, boolean> = {};
+      for (const g of filteredTraceGroups) next[g.traceId] = false;
+      return { ...m, ...next };
+    });
   };
 
   const anyPayloadClosed = filteredTraceGroups.some((g) =>
@@ -317,7 +334,10 @@ const socket = io(SOCKET_URL, {
     setTraceOpenMap({});
 
     try {
-      await fetch(`${API_BASE}/api/traces`, { method: "DELETE", headers: authHeaders() });
+      await fetch(`${API_BASE}/api/traces`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
     } catch (err) {
       console.error("[Dashboard] failed to clear traces", err);
     }
@@ -325,14 +345,18 @@ const socket = io(SOCKET_URL, {
 
   const runDemo = async () => {
     try {
-      await fetch(`${API_BASE}/api/traces`, { method: "DELETE", headers: authHeaders() });
+      await fetch(`${API_BASE}/api/traces`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
 
       setEvents([]);
       setOpenMap({});
       setTraceOpenMap({});
 
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
-        method: "POST",  headers: { ...authHeaders(), "Content-Type": "application/json" },
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           apps: ["mern-sample-app", "mern-sample-app-2"]
         })
@@ -344,7 +368,9 @@ const socket = io(SOCKET_URL, {
         traceIdsByApp?: Record<string, string[]>;
       } = await res.json();
 
-      const eventsRes = await fetch(`${API_BASE}/api/traces`, { headers: authHeaders() });
+      const eventsRes = await fetch(`${API_BASE}/api/traces`, {
+        headers: authHeaders()
+      });
       const data: Event[] = await eventsRes.json();
       const ordered = [...data].sort((a, b) => a.ts - b.ts);
       setEvents(ordered);
@@ -403,150 +429,150 @@ const socket = io(SOCKET_URL, {
     }
   };
 
-const toggleInsight = async (traceId: string) => {
-  const willOpen = !(insightOpenMap[traceId] ?? false);
-  setInsightOpenMap((m) => ({ ...m, [traceId]: willOpen }));
-  if (!willOpen) return;
+  const toggleInsight = async (traceId: string) => {
+    const willOpen = !(insightOpenMap[traceId] ?? false);
+    setInsightOpenMap((m) => ({ ...m, [traceId]: willOpen }));
+    if (!willOpen) return;
 
-  if (insightStateMap[traceId]?.status === "ready") return;
+    if (insightStateMap[traceId]?.status === "ready") return;
 
-  setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
+    setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
 
-  let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
+    let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
 
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`,
-      { headers: authHeaders() }
-    );
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/insights/${encodeURIComponent(traceId)}`,
+        { headers: authHeaders() }
+      );
 
-    rl = parseRateLimitHeaders(res.headers);
-    const json = await res.json().catch(() => ({}));
+      rl = parseRateLimitHeaders(res.headers);
+      const json = await res.json().catch(() => ({}));
 
-    if (res.status === 429) {
-      const resetInSec =
-        rl?.resetAt != null
-          ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
-          : undefined;
+      if (res.status === 429) {
+        const resetInSec =
+          rl?.resetAt != null
+            ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
+            : undefined;
 
-      throw {
-        __rateLimited: true,
-        rateLimit: rl,
-        resetInSec,
-        message: json?.message ?? "Too many insight requests. Try again soon."
-      };
+        throw {
+          __rateLimited: true,
+          rateLimit: rl,
+          resetInSec,
+          message: json?.message ?? "Too many insight requests. Try again soon."
+        };
+      }
+
+      if (!res.ok || !json?.ok) {
+        if (json?.error === "INSIGHT_SAMPLED_OUT") {
+          setInsightStateMap((m) => ({
+            ...m,
+            [traceId]: {
+              status: "error",
+              code: "INSIGHT_SAMPLED_OUT",
+              error:
+                json?.message ??
+                "AI Insights were skipped for this trace (sampling). Click Regenerate to force.",
+              rateLimit: rl
+            }
+          }));
+          return;
+        }
+
+        throw {
+          message: json?.message ?? "Failed to load insight",
+          code: json?.error,
+          rateLimit: rl
+        };
+      }
+
+      setInsightStateMap((m) => ({
+        ...m,
+        [traceId]: {
+          status: "ready",
+          data: json.insight,
+          meta: { cached: json.cached, computedAt: json.computedAt },
+          rateLimit: rl
+        }
+      }));
+    } catch (e: any) {
+      setInsightStateMap((m) => ({
+        ...m,
+        [traceId]: {
+          status: "error",
+          code: e?.code,
+          error:
+            e?.__rateLimited && e?.resetInSec != null
+              ? `Rate limited. Try again in ${e.resetInSec}s.`
+              : (e?.message ?? "Request failed"),
+          rateLimit: e?.rateLimit ?? rl
+        }
+      }));
     }
+  };
 
-    if (!res.ok || !json?.ok) {
-      if (json?.error === "INSIGHT_SAMPLED_OUT") {
-        setInsightStateMap((m) => ({
-          ...m,
-          [traceId]: {
-            status: "error",
-            code: "INSIGHT_SAMPLED_OUT",
-            error:
-              json?.message ??
-              "AI Insights were skipped for this trace (sampling). Click Regenerate to force.",
-            rateLimit: rl
-          }
-        }));
-        return;
+  const regenerateInsight = async (traceId: string) => {
+    setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
+    setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
+
+    let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
+        { method: "POST", headers: authHeaders() }
+      );
+
+      rl = parseRateLimitHeaders(res.headers);
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 429) {
+        const resetInSec =
+          rl?.resetAt != null
+            ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
+            : undefined;
+
+        throw {
+          __rateLimited: true,
+          rateLimit: rl,
+          resetInSec,
+          message:
+            json?.message ?? "Too many regenerate requests. Try again soon."
+        };
       }
 
-      throw {
-        message: json?.message ?? "Failed to load insight",
-        code: json?.error,
-        rateLimit: rl
-      };
+      if (!res.ok || !json?.ok || !json?.insight) {
+        throw {
+          message: json?.message ?? "Failed to regenerate insight",
+          code: json?.error,
+          rateLimit: rl
+        };
+      }
+
+      setInsightStateMap((m) => ({
+        ...m,
+        [traceId]: {
+          status: "ready",
+          data: json.insight,
+          meta: { cached: json.cached, computedAt: json.computedAt },
+          rateLimit: rl
+        }
+      }));
+    } catch (e: any) {
+      setInsightStateMap((m) => ({
+        ...m,
+        [traceId]: {
+          status: "error",
+          code: e?.code,
+          error:
+            e?.__rateLimited && e?.resetInSec != null
+              ? `Rate limited. Try again in ${e.resetInSec}s.`
+              : (e?.message ?? "Request failed"),
+          rateLimit: e?.rateLimit ?? rl
+        }
+      }));
     }
-
-    setInsightStateMap((m) => ({
-      ...m,
-      [traceId]: {
-        status: "ready",
-        data: json.insight,
-        meta: { cached: json.cached, computedAt: json.computedAt },
-        rateLimit: rl
-      }
-    }));
-  } catch (e: any) {
-    setInsightStateMap((m) => ({
-      ...m,
-      [traceId]: {
-        status: "error",
-        code: e?.code,
-        error:
-          e?.__rateLimited && e?.resetInSec != null
-            ? `Rate limited. Try again in ${e.resetInSec}s.`
-            : (e?.message ?? "Request failed"),
-        rateLimit: e?.rateLimit ?? rl
-      }
-    }));
-  }
-};
-
-const regenerateInsight = async (traceId: string) => {
-  setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
-  setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
-
-  let rl: ReturnType<typeof parseRateLimitHeaders> | undefined;
-
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/insights/${encodeURIComponent(traceId)}/regenerate`,
-      { method: "POST", headers: authHeaders() }
-    );
-
-    rl = parseRateLimitHeaders(res.headers);
-    const json = await res.json().catch(() => ({}));
-
-    if (res.status === 429) {
-      const resetInSec =
-        rl?.resetAt != null
-          ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
-          : undefined;
-
-      throw {
-        __rateLimited: true,
-        rateLimit: rl,
-        resetInSec,
-        message:
-          json?.message ?? "Too many regenerate requests. Try again soon."
-      };
-    }
-
-    if (!res.ok || !json?.ok || !json?.insight) {
-      throw {
-        message: json?.message ?? "Failed to regenerate insight",
-        code: json?.error,
-        rateLimit: rl
-      };
-    }
-
-    setInsightStateMap((m) => ({
-      ...m,
-      [traceId]: {
-        status: "ready",
-        data: json.insight,
-        meta: { cached: json.cached, computedAt: json.computedAt },
-        rateLimit: rl
-      }
-    }));
-  } catch (e: any) {
-    setInsightStateMap((m) => ({
-      ...m,
-      [traceId]: {
-        status: "error",
-        code: e?.code,
-        error:
-          e?.__rateLimited && e?.resetInSec != null
-            ? `Rate limited. Try again in ${e.resetInSec}s.`
-            : (e?.message ?? "Request failed"),
-        rateLimit: e?.rateLimit ?? rl
-      }
-    }));
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -559,7 +585,7 @@ const regenerateInsight = async (traceId: string) => {
                 SyncFlow Dashboard
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                Real-time monitoring for MERN applications
+                Real-time monitoring for MERn applications
               </p>
             </div>
 
@@ -594,9 +620,9 @@ const regenerateInsight = async (traceId: string) => {
         <TypeFilterBar
           filter={filter}
           setFilter={setFilter}
-          filteredEvents={filteredEvents}
           onClear={clearAll}
           onDemo={runDemo}
+          filterCounts={filterCounts}
         />
 
         <SearchBar
@@ -626,7 +652,6 @@ const regenerateInsight = async (traceId: string) => {
           onToggleAllPayloads={() =>
             anyPayloadClosed ? expandAllPayloads() : collapseAllPayloads()
           }
-          onToggleAppFromTrace={(appName) => toggleApp(appName)}
           toggleInsight={toggleInsight}
           insightStateMap={insightStateMap}
           insightOpenMap={insightOpenMap}

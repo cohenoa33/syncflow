@@ -11,7 +11,6 @@ type Props = {
   onToggleTrace: (traceId: string) => void;
   onTogglePayload: (eventId: string) => void;
   onCopyPayload: (event: Event) => void;
-  onToggleAppFromTrace: (appName: string) => void;
   toggleInsight: (traceId: string) => void;
   setInsightOpenMap: React.Dispatch<
     React.SetStateAction<Record<string, boolean>>
@@ -35,7 +34,6 @@ export function TraceCard({
   onToggleTrace,
   onTogglePayload,
   onCopyPayload,
-  onToggleAppFromTrace,
   toggleInsight,
   setInsightOpenMap,
   onRegenerateInsight,
@@ -71,7 +69,7 @@ export function TraceCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onToggleAppFromTrace(g.appName);
+              onToggleTrace(g.traceId);
             }}
             className="text-xs text-gray-500 hover:text-gray-900 underline"
             title="Toggle app selection"

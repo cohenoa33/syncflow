@@ -1,19 +1,22 @@
-import type { Event } from "../lib/types";
 
 type Props = {
   filter: "all" | "express" | "mongoose" | "error";
   setFilter: (v: "all" | "express" | "mongoose" | "error") => void;
-  filteredEvents: Event[];
+  filterCounts: {
+    all: number;
+    express: number;
+    mongoose: number;
+    error: number;
+  }
   onClear: () => void;
   onDemo: () => void;
 };
 
 export function TypeFilterBar({
   filter,
-  setFilter,
-  filteredEvents,
+  setFilter,filterCounts,
   onClear,
-  onDemo
+  onDemo,
 }: Props) {
   return (
     <div className="bg-white rounded-lg shadow mb-6 p-4">
@@ -29,11 +32,11 @@ export function TypeFilterBar({
             }`}
           >
             {t === "all"
-              ? `All (${filteredEvents.length})`
+              ? `All (${filterCounts.all})`
               : t === "error"
-                ? `Error (${filteredEvents.filter((e) => e.level === "error").length})`
+                ? `Error (${filterCounts.error})`
                 : `${t[0].toUpperCase() + t.slice(1)} (${
-                    filteredEvents.filter((e) => e.type === t).length
+                    filterCounts[t]
                   })`}
           </button>
         ))}
