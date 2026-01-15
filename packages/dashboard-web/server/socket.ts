@@ -107,7 +107,11 @@ export function attachSocketServer(httpServer: HttpServer) {
         socketId: socket.id,
         tenantId: socket.data.tenantId as string
       });
-      io.emit("agents", Array.from(connectedAgents.values()));
+      const tenantId = socket.data.tenantId as string;
+io.to(`tenant:${tenantId}`).emit(
+  "agents",
+  Array.from(connectedAgents.values()).filter((a) => a.tenantId === tenantId)
+);
 
       console.log("[Dashboard] Agent registered:", appName, socket.id);
     });
@@ -169,7 +173,11 @@ export function attachSocketServer(httpServer: HttpServer) {
     socket.on("disconnect", () => {
       authedSockets.delete(socket.id);
       connectedAgents.delete(socket.id);
-      io.emit("agents", Array.from(connectedAgents.values()));
+      const tenantId = socket.data.tenantId as string;
+io.to(`tenant:${tenantId}`).emit(
+  "agents",
+  Array.from(connectedAgents.values()).filter((a) => a.tenantId === tenantId)
+);
 
       socket.data.registered = false;
       socket.data.appName = undefined;
