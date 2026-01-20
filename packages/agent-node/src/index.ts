@@ -153,6 +153,7 @@ export class SyncFlowAgent {
     }
 
     this.socket = io(this.dashboardUrl, {
+      transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5

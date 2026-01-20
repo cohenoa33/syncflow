@@ -13,11 +13,13 @@ import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
 import { authHeaders } from "./lib/api";
+import { DemoPage } from "./pages/DemoPage";
 
-export default function App() {
+function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [showDemoPage, setShowDemoPage] = useState(false);
 
   const [filter, setFilter] = useState<
     "all" | "express" | "mongoose" | "error"
@@ -343,72 +345,6 @@ export default function App() {
     }
   };
 
-  const runDemo = async () => {
-    try {
-      await fetch(`${API_BASE}/api/traces`, {
-        method: "DELETE",
-        headers: authHeaders()
-      });
-
-      setEvents([]);
-      setOpenMap({});
-      setTraceOpenMap({});
-
-      const res = await fetch(`${API_BASE}/api/demo-seed`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apps: ["mern-sample-app", "mern-sample-app-2"]
-        })
-      });
-
-      const json: {
-        ok: boolean;
-        count: number;
-        traceIdsByApp?: Record<string, string[]>;
-      } = await res.json();
-
-      const eventsRes = await fetch(`${API_BASE}/api/traces`, {
-        headers: authHeaders()
-      });
-      const data: Event[] = await eventsRes.json();
-      const ordered = [...data].sort((a, b) => a.ts - b.ts);
-      setEvents(ordered);
-
-      const initialOpen: Record<string, boolean> = {};
-      const initialTraceOpen: Record<string, boolean> = {};
-      for (const e of ordered) {
-        initialOpen[e.id] = false;
-        const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
-        if (!(key in initialTraceOpen)) initialTraceOpen[key] = false;
-      }
-
-      const allTraceIds = Object.values(json.traceIdsByApp ?? {}).flat();
-      const newestTraceId = allTraceIds.length
-        ? allTraceIds[allTraceIds.length - 1]
-        : undefined;
-
-      if (newestTraceId) initialTraceOpen[newestTraceId] = true;
-
-      if (newestTraceId) {
-        const newestTraceEvents = ordered
-          .filter((e) => e.traceId === newestTraceId)
-          .sort((a, b) => b.ts - a.ts);
-
-        const latestExpress = newestTraceEvents.find(
-          (e) => e.type === "express"
-        );
-        if (latestExpress) initialOpen[latestExpress.id] = true;
-      }
-
-      setOpenMap(initialOpen);
-      setTraceOpenMap(initialTraceOpen);
-    } catch (err) {
-      console.error("[Dashboard] demo mode failed", err);
-      alert("Demo Mode failed. Check the dashboard server logs.");
-    }
-  };
-
   const toggleTrace = (traceId: string) =>
     setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
 
@@ -574,6 +510,20 @@ export default function App() {
     }
   };
 
+  if (showDemoPage) {
+    return (
+      <DemoPage
+        onDemoComplete={(events, openMap, traceOpenMap) => {
+          setEvents(events);
+          setOpenMap(openMap);
+          setTraceOpenMap(traceOpenMap);
+          setShowDemoPage(false);
+        }}
+        onNavigateBack={() => setShowDemoPage(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -621,7 +571,7 @@ export default function App() {
           filter={filter}
           setFilter={setFilter}
           onClear={clearAll}
-          onDemo={runDemo}
+          onOpenDemo={() => setShowDemoPage(true)}
           filterCounts={filterCounts}
         />
 
@@ -661,4 +611,9 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+
+export default function App() {
+  return <Dashboard />;
 }

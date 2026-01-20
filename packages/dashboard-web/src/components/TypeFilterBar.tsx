@@ -1,4 +1,3 @@
-
 type Props = {
   filter: "all" | "express" | "mongoose" | "error";
   setFilter: (v: "all" | "express" | "mongoose" | "error") => void;
@@ -7,16 +6,17 @@ type Props = {
     express: number;
     mongoose: number;
     error: number;
-  }
+  };
   onClear: () => void;
-  onDemo: () => void;
+  onOpenDemo: () => void;
 };
 
 export function TypeFilterBar({
   filter,
-  setFilter,filterCounts,
+  setFilter,
+  filterCounts,
   onClear,
-  onDemo,
+  onOpenDemo
 }: Props) {
   return (
     <div className="bg-white rounded-lg shadow mb-6 p-4">
@@ -35,9 +35,7 @@ export function TypeFilterBar({
               ? `All (${filterCounts.all})`
               : t === "error"
                 ? `Error (${filterCounts.error})`
-                : `${t[0].toUpperCase() + t.slice(1)} (${
-                    filterCounts[t]
-                  })`}
+                : `${t[0].toUpperCase() + t.slice(1)} (${filterCounts[t]})`}
           </button>
         ))}
 
@@ -49,10 +47,10 @@ export function TypeFilterBar({
         </button>
 
         <button
-          onClick={onDemo}
+          onClick={onOpenDemo}
           className="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
         >
-          Demo Mode
+          Load Demo Data
         </button>
       </div>
     </div>

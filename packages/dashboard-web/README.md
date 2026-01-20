@@ -64,7 +64,7 @@ pnpm dev
 ### Next Steps
 
 1. Start an instrumented app (e.g., `examples/mern-sample-app`)
-2. Or click **Demo Mode** button to seed test traces
+2. Or click **Load Demo Data** button to seed test traces
 3. See [Configuration](#configuration) for env vars and features
 
 ---
@@ -180,7 +180,7 @@ pnpm start
 1. **Agent connects** → Socket.IO registration → added to agent list
 2. **Agent sends event** → broadcast to all dashboards via Socket.IO + persisted to MongoDB
 3. **User clicks insight** → API fetches cached insight or generates new one (respecting sampling & rate limits)
-4. **Demo Mode** → clears DB and seeds 4 sample traces with realistic data
+4. **Load Demo Data** → clears DB and seeds 4 sample traces with realistic data
 
 **Key defaults**:
 
@@ -364,7 +364,7 @@ CMD ["pnpm", "start"]
 
 ## 🧪 Demo Mode
 
-Click **Demo Mode** button to seed 4 sample traces with realistic data. Useful for walkthroughs, testing filters, and validating insights without live agents.
+Click **Load Demo Data** button to seed 4 sample traces with realistic data. Useful for walkthroughs, testing filters, and validating insights without live agents.
 
 ---
 
@@ -374,7 +374,7 @@ Click **Demo Mode** button to seed 4 sample traces with realistic data. Useful f
 
 **Dashboard won't load (404)**: `pnpm dev` must be running. Check terminal for Vite/Express output. Visit http://localhost:5173 directly.
 
-**Traces don't appear**: Start an instrumented agent (`examples/mern-sample-app`) or click **Demo Mode** button in dashboard.
+**Traces don't appear**: Start an instrumented agent (`examples/mern-sample-app`) or click **Load Demo Data** button in dashboard.
 
 **AI Insights failing**: Add `OPENAI_API_KEY=sk-proj-...` to `.env.local` and restart `pnpm dev`. Insights are optional.
 
