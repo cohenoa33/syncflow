@@ -1,11 +1,14 @@
+import { TENANT_ID } from "./config";
+
 export function authHeaders(): HeadersInit {
   const headers: Record<string, string> = {};
-
   const token = import.meta.env.VITE_DASHBOARD_API_KEY;
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
-  const tenant = (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim();
-  headers["X-Tenant-Id"] = tenant && tenant.length > 0 ? tenant : "local";
+  // Always include tenant ID (required in strict mode, default in dev)
+  headers["X-Tenant-Id"] = TENANT_ID;
 
   return headers;
 }

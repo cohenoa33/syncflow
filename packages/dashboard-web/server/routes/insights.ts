@@ -4,7 +4,6 @@ import { buildInsightForTrace } from "../insights";
 import { checkRateLimit } from "../ai/rateLimit";
 import { shouldSampleInsight } from "../ai/sampling";
 import { apiError } from "../errors";
-import { getTenantId } from "../tenants";
 
 const INSIGHT_TTL_MS = 1000 * 60 * 60;
 
@@ -20,7 +19,7 @@ export function registerInsightsRoutes(app: Express) {
   app.get("/api/insights/:traceId", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-      const tenantId = getTenantId(req);
+      const tenantId = (req as any).tenantId || "local";
 
       const cached = await InsightModel.findOne({ tenantId, traceId }).lean();
       const fresh =
@@ -36,7 +35,7 @@ export function registerInsightsRoutes(app: Express) {
         });
       }
 
-      const traceEvents = await EventModel.find({ traceId })
+      const traceEvents = await EventModel.find({ tenantId, traceId })
         .sort({ ts: 1 })
         .lean();
 
@@ -116,7 +115,7 @@ export function registerInsightsRoutes(app: Express) {
   app.post("/api/insights/:traceId/regenerate", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-      const tenantId = getTenantId(req);
+      const tenantId = (req as any).tenantId || "local";
       console.log("[Dashboard] Regenerating insight for trace", traceId);
 
       const traceEvents = await EventModel.find({ tenantId, traceId })

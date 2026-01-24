@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
-import { API_BASE, SOCKET_URL } from "./lib/config";
+import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
 
 import type { Agent, Event, InsightState, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
@@ -77,19 +77,16 @@ function Dashboard() {
       transports: ["websocket", "polling"],
       auth: {
         token: token?.trim(),
-        tenantId: import.meta.env.VITE_TENANT_ID || "local"
+        tenantId: TENANT_ID
       }
     });
+
     socket.on("connect", () => {
       setConnected(true);
-      const tenantId =
-        (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim() ||
-        "local";
-
-      socket.emit("join_tenant", { tenantId });
+      // Join tenant room on connect
+      socket.emit("join_tenant", { tenantId: TENANT_ID });
     });
     socket.on("disconnect", () => setConnected(false));
-
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
@@ -612,7 +609,6 @@ function Dashboard() {
     </div>
   );
 }
-
 
 export default function App() {
   return <Dashboard />;

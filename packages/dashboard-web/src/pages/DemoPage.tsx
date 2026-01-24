@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { API_BASE } from "../lib/config";
+import { API_BASE, TENANT_ID } from "../lib/config";
 import { authHeaders } from "../lib/api";
 import type { Event } from "../lib/types";
 
@@ -14,29 +14,37 @@ type Props = {
 
 export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
   const [loading, setLoading] = useState(false);
+  const isDemoTenant = TENANT_ID === "demo";
 
   const runDemo = async () => {
     try {
       setLoading(true);
+      // For demo tenant, seed demo apps
+      const appsToSeed = isDemoTenant
+        ? ["demo-app-1", "demo-app-2"]
+        : ["mern-sample-app", "mern-sample-app-2"];
+
       await fetch(`${API_BASE}/api/traces`, {
         method: "DELETE",
         headers: authHeaders()
       });
+  
 
+      // Seed demo traces
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          apps: ["mern-sample-app", "mern-sample-app-2"]
+          apps: appsToSeed
         })
       });
-
       const json: {
         ok: boolean;
         count: number;
         traceIdsByApp?: Record<string, string[]>;
       } = await res.json();
-
+      
+      // Fetch loaded traces
       const eventsRes = await fetch(`${API_BASE}/api/traces`, {
         headers: authHeaders()
       });
@@ -73,7 +81,7 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
       onNavigateBack();
     } catch (err) {
       console.error("[Dashboard] load demo trace data failed", err);
-      alert("Load Demo Data failed. Check the dashboard server logs.");
+      alert("Load Demo Data failed. Check the dashboard server logs." + err);
       setLoading(false);
     }
   };
@@ -82,19 +90,21 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
     <div className="min-h-screen bg-linear-to-br from-indigo-50 to-blue-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
         <h1 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-          Load Demo Data
+          {isDemoTenant ? "Load Demo Data" : "Load Sample Data"}
         </h1>
         <p className="text-gray-600 text-center mb-8">
           Click the button below to load sample trace data and explore the
           dashboard features.
         </p>
         <p className="text-xs text-gray-500 text-center mt-6">
-          This will remove all existing trace data for mern-sample-app and
-          mern-sample-app-2, and replace it with sample demo traces.{" "}
+          {isDemoTenant
+            ? "This will seed realistic demo traces to the demo tenant. Use this to explore the dashboard features without running a live application."
+            : "This will remove all existing trace data and replace it with sample demo traces."}
         </p>{" "}
         <p className="text-xs text-gray-500 text-center mt-2 mb-6">
-          Use this to explore the dashboard features without running a live
-          application.
+          {isDemoTenant
+            ? "Demo data is isolated to the 'demo' tenant and does not affect production data."
+            : "Sample apps: mern-sample-app, mern-sample-app-2"}
         </p>
         <div className="space-y-4">
           <button
@@ -102,7 +112,7 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
             disabled={loading}
             className="w-full px-6 py-3 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {loading ? "Loading Demo Data..." : "Continue"}
+            {loading ? "Loading..." : "Continue"}
           </button>
 
           <button

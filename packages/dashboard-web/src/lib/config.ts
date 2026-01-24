@@ -10,3 +10,12 @@ export const API_BASE =
 export const SOCKET_URL =
   rawSocketUrl?.trim() ||
   (typeof window !== "undefined" ? window.location.origin : "");
+
+/**
+ * Tenant ID for this build/session.
+ * All requests and socket connections use this tenant ID exclusively.
+ * Default: "local" (dev mode)
+ */
+export const TENANT_ID = (
+  (import.meta.env.VITE_TENANT_ID as string | undefined)?.trim() || "local"
+).toLowerCase();

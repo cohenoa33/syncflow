@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
-
+import "dotenv/config";
 import { connectMongo } from "./models";
 import { attachSocketServer } from "./socket";
 import { registerTracesRoutes } from "./routes/traces";

@@ -1,19 +1,72 @@
+// packages/dashboard-web/server/routes/demo.ts
 import type { Express } from "express";
 import type { Server } from "socket.io";
 import { EventModel } from "../models";
 import { eventsBuffer } from "../state";
 import { generateDemoTraces } from "../demo/seed";
-import { getTenantId } from "../tenants";
+import { getTenantId } from "../tenants"; // <-- use your existing helper
+
+const ALLOWED_DEMO_APPS = ["mern-sample-app", "mern-sample-app-2"];
+const DEMO_SOURCE = "demo";
+
+function isDemoModeEnabled(): boolean {
+  return process.env.DEMO_MODE_ENABLED === "true";
+}
+
+// Optional: keep token gating only if you want “public demo” safety.
+// If you don’t need public demo, you can remove this entirely.
+function validateDemoTokenIfConfigured(reqAuthHeader: string): boolean {
+  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+  if (!expected) return true; // if not configured, don't block
+  const token = reqAuthHeader.startsWith("Bearer ")
+    ? reqAuthHeader.slice("Bearer ".length)
+    : "";
+  return token === expected;
+}
 
 export function registerDemoRoutes(app: Express, io: Server) {
   app.post("/api/demo-seed", async (req, res) => {
     try {
+      // Gate 1: Demo mode must be enabled
+      if (!isDemoModeEnabled()) {
+        return res.status(403).json({
+          ok: false,
+          error: "DEMO_MODE_DISABLED",
+          message: "Demo mode is not enabled on this server."
+        });
+      }
+
+      // Gate 2 (optional): require demo token ONLY if DEMO_MODE_TOKEN is set
+      if (!validateDemoTokenIfConfigured(req.headers.authorization || "")) {
+        return res.status(401).json({
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid demo token"
+        });
+      }
+
+      // ✅ Seed into *current tenant* (not hardcoded "demo")
       const tenantId = getTenantId(req);
 
-      const apps =
+      const requested =
         Array.isArray(req.body?.apps) && req.body.apps.length > 0
           ? req.body.apps
-          : ["mern-sample-app"];
+          : ALLOWED_DEMO_APPS;
+
+      // Allow only our demo app names (independent of TENANTS_JSON)
+      const apps = requested.filter((a: string) =>
+        ALLOWED_DEMO_APPS.includes(a)
+      );
+      if (apps.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: "INVALID_DEMO_APPS",
+          message: `Allowed demo apps: ${ALLOWED_DEMO_APPS.join(", ")}`
+        });
+      }
+
+      // ✅ Only delete demo-seeded traces for this tenant (do NOT wipe real data)
+      await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
 
       const all: any[] = [];
       const traceIdsByApp: Record<string, string[]> = {};
@@ -21,7 +74,8 @@ export function registerDemoRoutes(app: Express, io: Server) {
       for (const appName of apps) {
         const seeded = generateDemoTraces(appName).map((e) => ({
           ...e,
-          tenantId
+          tenantId,
+          source: DEMO_SOURCE
         }));
 
         all.push(...seeded);
@@ -31,22 +85,68 @@ export function registerDemoRoutes(app: Express, io: Server) {
         );
       }
 
-      await EventModel.insertMany(all);
+      if (all.length > 0) {
+        await EventModel.insertMany(all);
 
-      for (const e of all) eventsBuffer.push(e);
-      while (eventsBuffer.length > 1000) eventsBuffer.shift();
+        // keep buffer bounded
+        for (const e of all) eventsBuffer.push(e);
+        while (eventsBuffer.length > 1000) eventsBuffer.shift();
 
-      const room = `tenant:${tenantId}`;
-      for (const e of all) io.to(room).emit("event", e);
+        const room = `tenant:${tenantId}`;
+        for (const e of all) io.to(room).emit("event", e);
+      }
 
       console.log(
         `[Dashboard] Seeded demo traces: ${all.length} events (tenant=${tenantId})`
       );
 
-      res.json({ ok: true, count: all.length, traceIdsByApp, tenantId });
+      return res.json({ ok: true, count: all.length, traceIdsByApp, tenantId });
     } catch (err) {
       console.error("[Dashboard] Failed to seed demo traces", err);
-      res.status(500).json({ ok: false });
+      return res.status(500).json({ ok: false });
+    }
+  });
+
+  app.delete("/api/demo-seed", async (req, res) => {
+    try {
+      if (!isDemoModeEnabled()) {
+        return res.status(403).json({
+          ok: false,
+          error: "DEMO_MODE_DISABLED",
+          message: "Demo mode is not enabled on this server."
+        });
+      }
+
+      if (!validateDemoTokenIfConfigured(req.headers.authorization || "")) {
+        return res.status(401).json({
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid demo token"
+        });
+      }
+
+      const tenantId = getTenantId(req);
+
+      // ✅ Only delete demo-seeded events for this tenant
+      await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
+
+      // remove demo events for this tenant from in-memory buffer
+      for (let i = eventsBuffer.length - 1; i >= 0; i--) {
+        const ev: any = eventsBuffer[i];
+        if (ev?.tenantId === tenantId && ev?.source === DEMO_SOURCE) {
+          eventsBuffer.splice(i, 1);
+        }
+      }
+
+      const room = `tenant:${tenantId}`;
+      io.to(room).emit("eventHistory", []);
+
+      console.log(`[Dashboard] Cleared demo traces (tenant=${tenantId})`);
+
+      return res.json({ ok: true, tenantId });
+    } catch (err) {
+      console.error("[Dashboard] Failed to clear demo traces", err);
+      return res.status(500).json({ ok: false });
     }
   });
 }

@@ -3,8 +3,15 @@ import type { Server as HttpServer } from "http";
 import { EventModel } from "./models";
 import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
+import {
+  APP_INDEX,
+  REQUIRE_AUTH,
+  getTenantFromHeaders
+} from "./tenants";
+import { validateDashboardViewerToken } from "./auth";
 
 export function attachSocketServer(httpServer: HttpServer) {
+  console.log("[Socket] Attaching Socket.IO server...");
   const io = new Server(httpServer, {
     cors: {
       origin: "*",
@@ -12,36 +19,6 @@ export function attachSocketServer(httpServer: HttpServer) {
       exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
     }
   });
-
-  type TenantsConfig = Record<
-    string,
-    { apps?: Record<string, string> } // appName -> token
-  >;
-
-  function parseTenantsConfig(): TenantsConfig {
-    const raw = process.env.TENANTS_JSON ?? "";
-    if (!raw) return {};
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      console.warn("[Dashboard] Failed to parse TENANTS_JSON");
-      return {};
-    }
-  }
-
-  const TENANTS = parseTenantsConfig();
-
-  // appName -> { tenantId, token }
-  const APP_INDEX: Record<string, { tenantId: string; token: string }> = {};
-  for (const [tenantId, t] of Object.entries(TENANTS)) {
-    const apps = t?.apps ?? {};
-    for (const [appName, token] of Object.entries(apps)) {
-      APP_INDEX[appName] = { tenantId, token };
-    }
-  }
-
-  const REQUIRE_AUTH = Object.keys(APP_INDEX).length > 0;
 
   const authedSockets = new Set<string>();
 
@@ -54,6 +31,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.id,
       "- awaiting register with token validation..."
     );
+
     socket.on("register", (data) => {
       console.log("[Socket] register", socket.id, data);
       const appName = data?.appName;
@@ -71,6 +49,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       }
 
       if (REQUIRE_AUTH) {
+        // Strict mode: validate appName+token against APP_INDEX
         const rec = APP_INDEX[appName]; // { tenantId, token }
 
         const expected = rec?.token;
@@ -81,39 +60,44 @@ export function attachSocketServer(httpServer: HttpServer) {
           return;
         }
 
+        // Derive tenantId from APP_INDEX, ignore any tenantId sent by agent
         socket.data.tenantId = rec.tenantId;
       } else {
-        socket.data.tenantId =
-          (typeof data?.tenantId === "string" && data.tenantId.trim()
-            ? data.tenantId.trim()
-            : process.env.DEFAULT_TENANT_ID) || "local";
+        // Dev mode: accept tenantId from data or fallback
+        socket.data.tenantId = getTenantFromHeaders(data);
       }
 
-      // ✅ mark as authenticated + registered
+      // mark as authenticated + registered (AFTER auth)
       authedSockets.add(socket.id);
       socket.data.registered = true;
       socket.data.appName = appName;
-      const room = `tenant:${socket.data.tenantId}`;
-      io.to(room).emit(
+      const tenantId = socket.data.tenantId as string;
+
+      // Join tenant room
+      socket.join(`tenant:${tenantId}`);
+
+      // Emit agents list to tenant room only
+      io.to(`tenant:${tenantId}`).emit(
         "agents",
         Array.from(connectedAgents.values()).filter(
-          (a) => a.tenantId === socket.data.tenantId
+          (a) => a.tenantId === tenantId
         )
       );
-      // tenantId already set above (from APP_INDEX or fallback)
 
+      // Add to connected agents tracker
       connectedAgents.set(socket.id, {
         appName,
         socketId: socket.id,
-        tenantId: socket.data.tenantId as string
+        tenantId
       });
-      const tenantId = socket.data.tenantId as string;
-io.to(`tenant:${tenantId}`).emit(
-  "agents",
-  Array.from(connectedAgents.values()).filter((a) => a.tenantId === tenantId)
-);
 
-      console.log("[Dashboard] Agent registered:", appName, socket.id);
+      console.log(
+        "[Dashboard] Agent registered:",
+        appName,
+        socket.id,
+        "tenant:",
+        tenantId
+      );
     });
 
     socket.on("event", async (data) => {
@@ -155,6 +139,7 @@ io.to(`tenant:${tenantId}`).emit(
         type: evt.type,
         traceId: evt.traceId
       });
+
       // Persist to database (non-blocking)
       EventModel.create(evt).catch((err) => {
         console.error(
@@ -162,22 +147,27 @@ io.to(`tenant:${tenantId}`).emit(
           evt.id,
           err instanceof Error ? err.message : err
         );
-        // Event is still in buffer and broadcast, so UI won't be affected
       });
 
- const room = `tenant:${evt.tenantId}`;
-
+      // Emit event to tenant room ONLY (not global)
+      const room = `tenant:${evt.tenantId}`;
       io.to(room).emit("event", evt);
     });
 
     socket.on("disconnect", () => {
       authedSockets.delete(socket.id);
-      connectedAgents.delete(socket.id);
       const tenantId = socket.data.tenantId as string;
-io.to(`tenant:${tenantId}`).emit(
-  "agents",
-  Array.from(connectedAgents.values()).filter((a) => a.tenantId === tenantId)
-);
+      connectedAgents.delete(socket.id);
+
+      // Emit updated agents list to tenant room only
+      if (tenantId) {
+        io.to(`tenant:${tenantId}`).emit(
+          "agents",
+          Array.from(connectedAgents.values()).filter(
+            (a) => a.tenantId === tenantId
+          )
+        );
+      }
 
       socket.data.registered = false;
       socket.data.appName = undefined;
@@ -186,26 +176,49 @@ io.to(`tenant:${tenantId}`).emit(
     });
 
     socket.on("join_tenant", (data) => {
-      const tenantIdRaw = data?.tenantId;
-      const tenantId =
-        typeof tenantIdRaw === "string" && tenantIdRaw.trim()
-          ? tenantIdRaw.trim()
-          : process.env.DEFAULT_TENANT_ID || "local";
+      const tenantIdFromHeader = getTenantFromHeaders(data?.headers || {});
+      const tenantIdFromData = data?.tenantId;
+
+      // Prefer explicit tenantId in data, fallback to header
+      const tenantId = tenantIdFromData || tenantIdFromHeader;
+
+      // In strict mode, validate viewer token
+      if (REQUIRE_AUTH) {
+        const token = data?.token || socket.handshake.auth?.token;
+
+        if (!token) {
+          socket.emit("auth_error", {
+            ok: false,
+            error: "UNAUTHORIZED",
+            message: "Missing or invalid viewer token"
+          });
+          return;
+        }
+
+        if (!validateDashboardViewerToken(tenantId, token)) {
+          socket.emit("auth_error", {
+            ok: false,
+            error: "UNAUTHORIZED",
+            message: "Missing or invalid viewer token"
+          });
+          return;
+        }
+      }
 
       socket.data.tenantId = tenantId;
+      socket.join(`tenant:${tenantId}`);
 
-      const room = `tenant:${socket.data.tenantId}`;
-      socket.join(room);
-
-      io.to(room).emit(
+      // Emit tenant-scoped agents list to this socket
+      socket.emit(
         "agents",
         Array.from(connectedAgents.values()).filter(
-          (a) => a.tenantId === socket.data.tenantId
+          (a) => a.tenantId === tenantId
         )
       );
 
       console.log("[Dashboard] UI joined tenant room:", tenantId, socket.id);
     });
+
     socket.on("connect_error", (err) => {
       console.log("[Socket] connect_error", socket.id, err?.message);
     });
