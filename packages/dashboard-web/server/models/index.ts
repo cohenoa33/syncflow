@@ -21,6 +21,7 @@ const EventSchema = new mongoose.Schema(
     payload: mongoose.Schema.Types.Mixed,
     receivedAt: Number,
     tenantId: { type: String, required: true, index: true },
+    source: { type: String, index: true } // "demo" for demo-seeded events, undefined for real
   },
   { timestamps: true }
 );

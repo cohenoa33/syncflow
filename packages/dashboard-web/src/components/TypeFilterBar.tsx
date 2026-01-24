@@ -7,16 +7,14 @@ type Props = {
     mongoose: number;
     error: number;
   };
-  onClear: () => void;
-  onOpenDemo: () => void;
+  onClear?: () => void;
 };
 
 export function TypeFilterBar({
   filter,
   setFilter,
   filterCounts,
-  onClear,
-  onOpenDemo
+  onClear
 }: Props) {
   return (
     <div className="bg-white rounded-lg shadow mb-6 p-4">
@@ -39,19 +37,14 @@ export function TypeFilterBar({
           </button>
         ))}
 
-        <button
-          onClick={onClear}
-          className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
-        >
-          Clear
-        </button>
-
-        <button
-          onClick={onOpenDemo}
-          className="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-        >
-          Load Demo Data
-        </button>
+        {onClear && (
+          <button
+            onClick={onClear}
+            className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+          >
+            Clear
+          </button>
+        )}
       </div>
     </div>
   );

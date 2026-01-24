@@ -13,29 +13,29 @@ export function registerTracesRoutes(app: Express, io: Server) {
       .limit(1000)
       .lean();
 
-  
-
     res.json(latest);
   });
 
   app.delete("/api/traces", async (req, res) => {
-
     const tenantId = (req as any).tenantId || "local";
 
-    await EventModel.deleteMany({ tenantId });
+    // Only delete real events (not demo-seeded)
+    await EventModel.deleteMany({ tenantId, source: { $ne: "demo" } });
     await InsightModel.deleteMany({ tenantId });
 
-    // clear only this tenant from the in-memory buffer
+    // clear only real events for this tenant from the in-memory buffer
     for (let i = eventsBuffer.length - 1; i >= 0; i--) {
-      if ((eventsBuffer[i] as any).tenantId === tenantId)
+      const ev = eventsBuffer[i] as any;
+      if (ev.tenantId === tenantId && ev.source !== "demo") {
         eventsBuffer.splice(i, 1);
+      }
     }
 
     // Emit eventHistory only to tenant room (room-scoped)
     const room = `tenant:${tenantId}`;
     io.to(room).emit("eventHistory", []);
-    
-    console.log("[Dashboard] Cleared traces for tenant:", tenantId);
+
+    console.log("[Dashboard] Cleared real traces for tenant:", tenantId);
 
     res.json({ ok: true });
   });

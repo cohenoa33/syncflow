@@ -12,8 +12,10 @@ import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
-import { authHeaders } from "./lib/api";
+import { authHeaders, fetchDemoConfig } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
+import { DemoModeToggle } from "./components/DemoModeToggle";
+import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 
 function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -44,6 +46,25 @@ function Dashboard() {
   const [insightStateMap, setInsightStateMap] = useState<
     Record<string, InsightState>
   >({});
+
+  // ----- Demo mode state -----
+  const [demoModeEnabled, setDemoModeEnabled] = useState(getDemoMode());
+  const [showDemoToggle, setShowDemoToggle] = useState(false);
+
+  // ----- Fetch demo config to determine toggle visibility -----
+  useEffect(() => {
+    fetchDemoConfig()
+      .then((config) => {
+        // Show toggle only if: server has demo enabled AND (dev mode OR token configured)
+        const isProd = import.meta.env.PROD;
+        const hasToken = !!(import.meta.env.VITE_DEMO_MODE_TOKEN ?? "").trim();
+        const shouldShow = config.demoModeEnabled && (!isProd || hasToken);
+        setShowDemoToggle(shouldShow);
+      })
+      .catch((err) => {
+        console.error("[Dashboard] Failed to fetch demo config:", err);
+      });
+  }, []);
 
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
@@ -117,12 +138,36 @@ function Dashboard() {
     };
   }, []);
 
+  // ----- Demo mode filtering -----
+  const displayedEvents = useMemo(() => {
+    if (!demoModeEnabled) {
+      // Show only real events (not demo)
+      return events.filter((e) => e.source !== "demo");
+    }
+    // Show only demo events
+    return events.filter((e) => e.source === "demo");
+  }, [events, demoModeEnabled]);
+
+  const displayedAgents = useMemo(() => {
+    if (!demoModeEnabled) {
+      return agents;
+    }
+    // Show fake demo agents
+    const demoApps = getDemoAppNames(TENANT_ID);
+    return demoApps.map((appName) => ({
+      appName,
+      socketId: `demo-${appName}`
+    }));
+  }, [agents, demoModeEnabled]);
+
   // ----- App options -----
   const appOptions = useMemo(() => {
-    const fromAgents = agents.map((a) => a.appName);
-    const fromEvents = Array.from(new Set(events.map((e) => e.appName)));
+    const fromAgents = displayedAgents.map((a) => a.appName);
+    const fromEvents = Array.from(
+      new Set(displayedEvents.map((e) => e.appName))
+    );
     return buildAppOptions(fromAgents, fromEvents);
-  }, [agents, events]);
+  }, [displayedAgents, displayedEvents]);
 
   // Keep selection sane when appOptions changes
   useEffect(() => {
@@ -171,7 +216,7 @@ function Dashboard() {
 
   // ----- Filters -----
   const filteredEvents = useMemo(() => {
-    let out = events;
+    let out = displayedEvents;
 
     if (!allAppsSelected) {
       if (selectedApps.size === 0) return [];
@@ -181,17 +226,17 @@ function Dashboard() {
     if (filter === "all") return out;
     if (filter === "error") return out.filter((e) => e.level === "error");
     return out.filter((e) => e.type === filter);
-  }, [events, filter, allAppsSelected, selectedApps]);
+  }, [displayedEvents, filter, allAppsSelected, selectedApps]);
 
   // Calculate filter counts based on app-filtered events (before type filtering)
   const appFilteredEvents = useMemo(() => {
-    let out = events;
+    let out = displayedEvents;
     if (!allAppsSelected) {
       if (selectedApps.size === 0) return [];
       out = out.filter((e) => selectedApps.has(e.appName));
     }
     return out;
-  }, [events, allAppsSelected, selectedApps]);
+  }, [displayedEvents, allAppsSelected, selectedApps]);
 
   const filterCounts = useMemo(() => {
     return {
@@ -328,17 +373,26 @@ function Dashboard() {
   };
 
   const clearAll = async () => {
-    setEvents([]);
-    setOpenMap({});
-    setTraceOpenMap({});
-
+    if (!confirm("Clear all traces?")) return;
     try {
-      await fetch(`${API_BASE}/api/traces`, {
+      // If demo mode is ON, clear demo data; otherwise clear real traces
+      const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
+      await fetch(`${API_BASE}${endpoint}`, {
         method: "DELETE",
         headers: authHeaders()
       });
+
+      // Filter out the cleared events
+      if (demoModeEnabled) {
+        setEvents((prev) => prev.filter((e) => e.source !== "demo"));
+      } else {
+        setEvents((prev) => prev.filter((e) => e.source === "demo"));
+      }
+
+      setOpenMap({});
+      setTraceOpenMap({});
     } catch (err) {
-      console.error("[Dashboard] failed to clear traces", err);
+      console.error("[Dashboard] clear traces failed", err);
     }
   };
 
@@ -537,6 +591,31 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {showDemoToggle && (
+                <DemoModeToggle
+                  onToggle={async (enabled) => {
+                    setDemoModeEnabled(enabled);
+                    // Refresh traces after toggle
+                    try {
+                      const res = await fetch(`${API_BASE}/api/traces`, {
+                        headers: authHeaders()
+                      });
+                      const data: Event[] = await res.json();
+                      const ordered = [...data].sort((a, b) => a.ts - b.ts);
+                      setEvents(ordered);
+                      const { open, traceOpen } = buildInitialMaps(ordered);
+                      setOpenMap(open);
+                      setTraceOpenMap(traceOpen);
+                    } catch (err) {
+                      console.error(
+                        "[Dashboard] failed to refresh traces",
+                        err
+                      );
+                    }
+                  }}
+                  disabled={!connected}
+                />
+              )}
               <div className="flex items-center gap-2">
                 <div
                   className={`w-2 h-2 rounded-full ${
@@ -548,7 +627,8 @@ function Dashboard() {
                 </span>
               </div>
               <div className="text-sm text-gray-600">
-                {agents.length} agent{agents.length !== 1 ? "s" : ""}
+                {displayedAgents.length} agent
+                {displayedAgents.length !== 1 ? "s" : ""}
               </div>
             </div>
           </div>
@@ -567,8 +647,7 @@ function Dashboard() {
         <TypeFilterBar
           filter={filter}
           setFilter={setFilter}
-          onClear={clearAll}
-          onOpenDemo={() => setShowDemoPage(true)}
+          onClear={demoModeEnabled ? undefined : clearAll}
           filterCounts={filterCounts}
         />
 

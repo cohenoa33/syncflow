@@ -7,6 +7,7 @@ import { attachSocketServer } from "./socket";
 import { registerTracesRoutes } from "./routes/traces";
 import { registerDemoRoutes } from "./routes/demo";
 import { registerInsightsRoutes } from "./routes/insights";
+import { registerConfigRoutes } from "./routes/config";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 
@@ -24,6 +25,11 @@ async function main() {
     })
   );
   app.use(express.json());
+
+  // Config endpoint (no auth required)
+  registerConfigRoutes(app);
+
+  // Protected API routes
   app.use("/api", requireApiKey);
 
   const httpServer = createServer(app);

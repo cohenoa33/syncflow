@@ -346,15 +346,13 @@ export class SyncFlowAgent {
               modelName,
               collection,
               operation: op,
-              kind: op.startsWith("find")
-                ? "read"
-                : op.startsWith("delete")
-                  ? "write"
-                  : op.startsWith("update")
+              kind: op.startsWith("delete")
+                ? "delete"
+                : op.startsWith("find")
+                  ? "read"
+                  : op.startsWith("update") || op === "save"
                     ? "write"
-                    : op === "save"
-                      ? "write"
-                      : "other",
+                    : "other",
               filter: sanitize(filter),
               update: sanitize(update),
               docId: doc?._id?.toString?.()

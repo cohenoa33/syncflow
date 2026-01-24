@@ -4,9 +4,8 @@ import type { Server } from "socket.io";
 import { EventModel } from "../models";
 import { eventsBuffer } from "../state";
 import { generateDemoTraces } from "../demo/seed";
-import { getTenantId } from "../tenants"; // <-- use your existing helper
+import { getTenantId } from "../tenants";
 
-const ALLOWED_DEMO_APPS = ["mern-sample-app", "mern-sample-app-2"];
 const DEMO_SOURCE = "demo";
 
 function isDemoModeEnabled(): boolean {
@@ -45,25 +44,16 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // ✅ Seed into *current tenant* (not hardcoded "demo")
       const tenantId = getTenantId(req);
 
+      // Generate demo app names for this tenant
+      const demoApps = [`demo-${tenantId}-app`, `demo-app-${tenantId}`];
+
+      // Use apps from request body if provided, otherwise use generated demo apps
       const requested =
         Array.isArray(req.body?.apps) && req.body.apps.length > 0
           ? req.body.apps
-          : ALLOWED_DEMO_APPS;
-
-      // Allow only our demo app names (independent of TENANTS_JSON)
-      const apps = requested.filter((a: string) =>
-        ALLOWED_DEMO_APPS.includes(a)
-      );
-      if (apps.length === 0) {
-        return res.status(400).json({
-          ok: false,
-          error: "INVALID_DEMO_APPS",
-          message: `Allowed demo apps: ${ALLOWED_DEMO_APPS.join(", ")}`
-        });
-      }
+          : demoApps;
 
       // ✅ Only delete demo-seeded traces for this tenant (do NOT wipe real data)
       await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
@@ -71,7 +61,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
       const all: any[] = [];
       const traceIdsByApp: Record<string, string[]> = {};
 
-      for (const appName of apps) {
+      for (const appName of requested) {
         const seeded = generateDemoTraces(appName).map((e) => ({
           ...e,
           tenantId,

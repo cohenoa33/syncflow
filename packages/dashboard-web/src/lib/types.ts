@@ -9,6 +9,7 @@ export interface Event {
   level: "info" | "warn" | "error";
   payload: Record<string, any>;
   receivedAt?: number;
+  source?: "demo"; // "demo" for demo-seeded events, undefined for real
 }
 
 export interface Agent {
