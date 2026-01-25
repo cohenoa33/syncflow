@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
 import {
-  APP_INDEX,
   REQUIRE_AUTH,
   TENANTS,
   getTenantFromHeaders
@@ -35,13 +34,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
 
     // Validate tenant exists in TENANTS_JSON (if TENANTS_JSON is defined)
     if (REQUIRE_AUTH) {
-      // At least one tenant exists in TENANTS_JSON, check that this one does too
-      // We'll need to import TENANTS to check, but for now rely on getTenantFromHeaders fallback
-      // If no apps are registered for this tenant, it's still invalid in strict mode
-      const isValidTenant = Object.values(APP_INDEX).some(
-        (rec) => rec.tenantId === tenantFromHeader
-      );
-
+    const isValidTenant = !!TENANTS[tenantFromHeader];
       if (
         !isValidTenant &&
         tenantFromHeader !== (process.env.DEFAULT_TENANT_ID || "local")

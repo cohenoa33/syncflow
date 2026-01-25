@@ -12,7 +12,7 @@ import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
-import { authHeaders, fetchDemoConfig } from "./lib/api";
+import { authHeaders, demoHeaders, fetchDemoConfig } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
@@ -55,11 +55,9 @@ function Dashboard() {
   useEffect(() => {
     fetchDemoConfig()
       .then((config) => {
-        // Show toggle only if: server has demo enabled AND (dev mode OR token configured)
-        const isProd = import.meta.env.PROD;
-        const hasToken = !!(import.meta.env.VITE_DEMO_MODE_TOKEN ?? "").trim();
-        const shouldShow = config.demoModeEnabled && (!isProd || hasToken);
-        setShowDemoToggle(shouldShow);
+        // Show toggle based on server's demoModeEnabled flag
+        // (which already accounts for AUTH_MODE and DEMO_MODE_TOKEN)
+        setShowDemoToggle(config.demoModeEnabled);
       })
       .catch((err) => {
         console.error("[Dashboard] Failed to fetch demo config:", err);
@@ -377,9 +375,11 @@ function Dashboard() {
     try {
       // If demo mode is ON, clear demo data; otherwise clear real traces
       const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
+      const headers = demoModeEnabled ? demoHeaders() : authHeaders();
+
       await fetch(`${API_BASE}${endpoint}`, {
         method: "DELETE",
-        headers: authHeaders()
+        headers
       });
 
       // Filter out the cleared events
@@ -627,8 +627,9 @@ function Dashboard() {
                 </span>
               </div>
               <div className="text-sm text-gray-600">
-                {displayedAgents.length} agent
-                {displayedAgents.length !== 1 ? "s" : ""}
+                {demoModeEnabled
+                  ? "2 agents"
+                  : `${displayedAgents.length} agent${displayedAgents.length !== 1 ? "s" : ""}`}
               </div>
             </div>
           </div>
@@ -647,7 +648,7 @@ function Dashboard() {
         <TypeFilterBar
           filter={filter}
           setFilter={setFilter}
-          onClear={demoModeEnabled ? undefined : clearAll}
+          onClear={clearAll}
           filterCounts={filterCounts}
         />
 

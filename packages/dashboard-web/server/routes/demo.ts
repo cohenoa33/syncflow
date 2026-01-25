@@ -1,4 +1,14 @@
-// packages/dashboard-web/server/routes/demo.ts
+/**
+ * Demo Mode Routes - Tenant-Scoped Demo Data Management
+ *
+ * Behavior:
+ * - Dev mode (AUTH_MODE=dev): No demo token required
+ * - Strict mode (AUTH_MODE=strict): Requires Authorization: Bearer ${DEMO_MODE_TOKEN}
+ * - All operations are tenant-scoped (use X-Tenant-Id header)
+ * - Demo events marked with source: "demo" (preserves real data)
+ * - Demo apps named: demo-${tenantId}-app, demo-app-${tenantId}
+ * - Socket broadcasts to tenant room only: tenant:${tenantId}
+ */
 import type { Express } from "express";
 import type { Server } from "socket.io";
 import { EventModel } from "../models";
@@ -12,15 +22,35 @@ function isDemoModeEnabled(): boolean {
   return process.env.DEMO_MODE_ENABLED === "true";
 }
 
-// Optional: keep token gating only if you want “public demo” safety.
-// If you don’t need public demo, you can remove this entirely.
-function validateDemoTokenIfConfigured(reqAuthHeader: string): boolean {
-  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
-  if (!expected) return true; // if not configured, don't block
-  const token = reqAuthHeader.startsWith("Bearer ")
-    ? reqAuthHeader.slice("Bearer ".length)
-    : "";
-  return token === expected;
+function getAuthMode(): "dev" | "strict" {
+  const mode = (process.env.AUTH_MODE || "dev").toLowerCase();
+  return mode === "strict" ? "strict" : "dev";
+}
+
+function validateDemoToken(reqAuthHeader: string): boolean {
+  const authMode = getAuthMode();
+  const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+
+  // In dev mode, demo token is optional (don't require it)
+  if (authMode === "dev") {
+    return true;
+  }
+
+  // In strict mode, require demo token only if DEMO_MODE_TOKEN is configured
+  if (authMode === "strict") {
+    // If DEMO_MODE_TOKEN is empty, demo should be disabled (handled by caller)
+    if (!demoToken) {
+      return false;
+    }
+
+    // Validate bearer token matches DEMO_MODE_TOKEN
+    const token = reqAuthHeader.startsWith("Bearer ")
+      ? reqAuthHeader.slice("Bearer ".length)
+      : "";
+    return token === demoToken;
+  }
+
+  return true;
 }
 
 export function registerDemoRoutes(app: Express, io: Server) {
@@ -35,8 +65,8 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Gate 2 (optional): require demo token ONLY if DEMO_MODE_TOKEN is set
-      if (!validateDemoTokenIfConfigured(req.headers.authorization || "")) {
+      // Gate 2: In strict mode, require demo token
+      if (!validateDemoToken(req.headers.authorization || "")) {
         return res.status(401).json({
           ok: false,
           error: "UNAUTHORIZED",
@@ -107,7 +137,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      if (!validateDemoTokenIfConfigured(req.headers.authorization || "")) {
+      if (!validateDemoToken(req.headers.authorization || "")) {
         return res.status(401).json({
           ok: false,
           error: "UNAUTHORIZED",

@@ -13,6 +13,20 @@ export function authHeaders(): HeadersInit {
   return headers;
 }
 
+export function demoHeaders(): HeadersInit {
+  const headers: Record<string, string> = {};
+
+  // Include demo token ONLY if it's configured (strict mode scenario)
+  const demoToken = import.meta.env.VITE_DEMO_MODE_TOKEN;
+  if (demoToken) {
+    headers.Authorization = `Bearer ${demoToken}`;
+  }
+
+  // Always include tenant ID
+  headers["X-Tenant-Id"] = TENANT_ID;
+
+  return headers;
+}
 
 export async function fetchDemoConfig(): Promise<{
   demoModeEnabled: boolean;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { API_BASE, TENANT_ID } from "../lib/config";
-import { authHeaders } from "../lib/api";
+import { demoHeaders } from "../lib/api";
 import { getDemoMode, setDemoMode, getDemoAppNames } from "../lib/demoMode";
 
 type Props = {
@@ -23,10 +23,9 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
         const demoApps = getDemoAppNames(TENANT_ID);
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "POST",
-          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          headers: { ...demoHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({ apps: demoApps })
         });
-
 
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -36,7 +35,7 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
         // Turning OFF: clear demo data
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "DELETE",
-          headers: authHeaders()
+          headers: demoHeaders()
         });
 
         if (!res.ok) {
