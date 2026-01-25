@@ -1,7 +1,11 @@
+// Load environment variables BEFORE any other imports
+import { loadServerEnv } from "./env";
+loadServerEnv();
+
+// Now import server dependencies (env is already loaded)
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
-import "dotenv/config";
 import { connectMongo } from "./models";
 import { attachSocketServer } from "./socket";
 import { registerTracesRoutes } from "./routes/traces";

@@ -1,8 +1,6 @@
-import dotenv from "dotenv";
+// Load environment variables BEFORE any other imports
+import { loadServerEnv } from "./env";
+loadServerEnv();
 
-// load env FIRST
-dotenv.config({ path: ".env.local" });
-
-
-// now import the real server
+// Now import the real server (all env vars are loaded)
 import "./index";
