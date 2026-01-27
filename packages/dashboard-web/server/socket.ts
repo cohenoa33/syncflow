@@ -3,11 +3,7 @@ import type { Server as HttpServer } from "http";
 import { EventModel } from "./models";
 import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
-import {
-  APP_INDEX,
-  REQUIRE_AUTH,
-  getTenantFromHeaders
-} from "./tenants";
+import { APP_INDEX, REQUIRE_AUTH, getTenantFromHeaders } from "./tenants";
 import { validateDashboardViewerToken } from "./auth";
 
 export function attachSocketServer(httpServer: HttpServer) {
@@ -33,7 +29,7 @@ export function attachSocketServer(httpServer: HttpServer) {
     );
 
     socket.on("register", (data) => {
-      console.log("[Socket] register", socket.id, data);
+      console.log("[Socket] register", socket.id, "appName:", data?.appName);
       const appName = data?.appName;
       const token = data?.token;
 
@@ -49,9 +45,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       }
 
       if (REQUIRE_AUTH) {
-        // Strict mode: validate appName+token against APP_INDEX
         const rec = APP_INDEX[appName]; // { tenantId, token }
-
         const expected = rec?.token;
         if (!expected || token !== expected) {
           console.warn("[Dashboard] Unauthorized agent:", socket.id, appName);
@@ -63,8 +57,18 @@ export function attachSocketServer(httpServer: HttpServer) {
         // Derive tenantId from APP_INDEX, ignore any tenantId sent by agent
         socket.data.tenantId = rec.tenantId;
       } else {
-        // Dev mode: accept tenantId from data or fallback
-        socket.data.tenantId = getTenantFromHeaders(data);
+        // Dev mode without TENANTS_JSON: require tenantId from agent payload
+        const tenantId = data?.tenantId?.trim();
+        if (!tenantId) {
+          console.warn(
+            "[Dashboard] Missing tenantId in agent payload:",
+            socket.id
+          );
+          socket.emit("auth_error", { ok: false, error: "MISSING_TENANT_ID" });
+          socket.disconnect(true);
+          return;
+        }
+        socket.data.tenantId = tenantId;
       }
 
       // mark as authenticated + registered (AFTER auth)
@@ -176,11 +180,17 @@ export function attachSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("join_tenant", (data) => {
-      const tenantIdFromHeader = getTenantFromHeaders(data?.headers || {});
-      const tenantIdFromData = data?.tenantId;
+      const tenantIdFromData = data?.tenantId?.trim();
 
-      // Prefer explicit tenantId in data, fallback to header
-      const tenantId = tenantIdFromData || tenantIdFromHeader;
+      // ALWAYS require explicit tenantId
+      if (!tenantIdFromData) {
+        console.warn("[Dashboard] Missing tenantId in join_tenant:", socket.id);
+        socket.emit("auth_error", { ok: false, error: "MISSING_TENANT_ID" });
+        socket.disconnect(true);
+        return;
+      }
+
+      const tenantId = tenantIdFromData;
 
       // In strict mode, validate viewer token
       if (REQUIRE_AUTH) {

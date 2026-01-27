@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { existsSync } from "fs";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
 /**
  * Single source of truth for loading environment variables in the dashboard server.
@@ -12,23 +13,17 @@ import { resolve } from "path";
  */
 
 let envLoaded = false;
-
 export function loadServerEnv(): void {
   if (envLoaded) return;
 
-  const cwd = process.cwd();
-  const envLocalPath = resolve(cwd, ".env.local");
-  const envPath = resolve(cwd, ".env");
+  const here = dirname(fileURLToPath(import.meta.url)); // .../server
+  const projectRoot = resolve(here, ".."); // .../dashboard-web
 
-  // Load .env.local first (highest priority)
-  if (existsSync(envLocalPath)) {
-    dotenv.config({ path: envLocalPath });
-  }
+  const envLocalPath = resolve(projectRoot, ".env.local");
+  const envPath = resolve(projectRoot, ".env");
 
-  // Load .env as fallback
-  if (existsSync(envPath)) {
-    dotenv.config({ path: envPath });
-  }
+  if (existsSync(envLocalPath)) dotenv.config({ path: envLocalPath });
+  if (existsSync(envPath)) dotenv.config({ path: envPath });
 
   envLoaded = true;
 }

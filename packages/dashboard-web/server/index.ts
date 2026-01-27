@@ -1,3 +1,4 @@
+
 // Load environment variables BEFORE any other imports
 import { loadServerEnv } from "./env";
 loadServerEnv();
@@ -16,6 +17,7 @@ import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 
 async function main() {
+
   await connectMongo().catch((err) => {
     console.error("[Dashboard] ❌ Mongo error", err);
     process.exit(1);

@@ -19,6 +19,9 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
 
     try {
       if (newValue) {
+        if (!TENANT_ID) {
+         return
+        }
         // Turning ON: seed demo data
         const demoApps = getDemoAppNames(TENANT_ID);
         const res = await fetch(`${API_BASE}/api/demo-seed`, {

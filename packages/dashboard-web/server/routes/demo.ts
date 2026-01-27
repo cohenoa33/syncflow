@@ -14,7 +14,7 @@ import type { Server } from "socket.io";
 import { EventModel } from "../models";
 import { eventsBuffer } from "../state";
 import { generateDemoTraces } from "../demo/seed";
-import { getTenantId } from "../tenants";
+import type { Request } from "express";
 
 const DEMO_SOURCE = "demo";
 
@@ -27,30 +27,18 @@ function getAuthMode(): "dev" | "strict" {
   return mode === "strict" ? "strict" : "dev";
 }
 
-function validateDemoToken(reqAuthHeader: string): boolean {
+function validateDemoToken(req: Request): boolean {
   const authMode = getAuthMode();
-  const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
 
-  // In dev mode, demo token is optional (don't require it)
-  if (authMode === "dev") {
-    return true;
-  }
+  // Dev: allow demo without token
+  if (authMode === "dev") return true;
 
-  // In strict mode, require demo token only if DEMO_MODE_TOKEN is configured
-  if (authMode === "strict") {
-    // If DEMO_MODE_TOKEN is empty, demo should be disabled (handled by caller)
-    if (!demoToken) {
-      return false;
-    }
+  // Strict: must have DEMO_MODE_TOKEN configured AND must match header
+  if (!expected) return false;
 
-    // Validate bearer token matches DEMO_MODE_TOKEN
-    const token = reqAuthHeader.startsWith("Bearer ")
-      ? reqAuthHeader.slice("Bearer ".length)
-      : "";
-    return token === demoToken;
-  }
-
-  return true;
+  const got = (req.headers["x-demo-token"] as string | undefined)?.trim() ?? "";
+  return got !== "" && got === expected;
 }
 
 export function registerDemoRoutes(app: Express, io: Server) {
@@ -66,7 +54,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
       }
 
       // Gate 2: In strict mode, require demo token
-      if (!validateDemoToken(req.headers.authorization || "")) {
+      if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
           error: "UNAUTHORIZED",
@@ -74,7 +62,14 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      const tenantId = getTenantId(req);
+      const tenantId = (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(500).json({
+          ok: false,
+          error: "BUG",
+          message: "tenantId not attached by auth middleware"
+        });
+      }
 
       // Generate demo app names for this tenant
       const demoApps = [`demo-${tenantId}-app`, `demo-app-${tenantId}`];
@@ -137,7 +132,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      if (!validateDemoToken(req.headers.authorization || "")) {
+      if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
           error: "UNAUTHORIZED",
@@ -145,7 +140,14 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      const tenantId = getTenantId(req);
+      const tenantId = (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(500).json({
+          ok: false,
+          error: "BUG",
+          message: "tenantId not attached by auth middleware"
+        });
+      }
 
       // ✅ Only delete demo-seeded events for this tenant
       await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });

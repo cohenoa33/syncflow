@@ -1,10 +1,6 @@
-import type { Request, Response, NextFunction } from "express";
-import { config } from "dotenv";
-import { resolve } from "path";
+// packages/dashboard-web/server/tenants.ts
 
-// Load .env.local first, then fall back to .env
-config({ path: resolve(process.cwd(), ".env.local") });
-config(); // Load .env as fallback
+import type { Request } from "express";
 
 /**
  * TenantsConfig: Single source of truth for tenant + app + dashboard configurations
@@ -13,7 +9,7 @@ config(); // Load .env as fallback
  * {
  *   tenantId: {
  *     apps: { appName: agentToken },
- *     dashboards: { viewerKey: { role: "admin" | "viewer" } }
+ *     dashboards: { viewerKey: true }
  *   }
  * }
  */
@@ -22,7 +18,7 @@ type TenantsConfig = Record<
   string,
   {
     apps?: Record<string, string>; // appName -> agentToken
-    dashboards?: Record<string, { role: "admin" | "viewer" }>;
+    dashboards?: Record<string, true>;
   }
 >;
 
@@ -65,35 +61,46 @@ export const APP_INDEX: Record<string, { tenantId: string; token: string }> =
 /**
  * Whether auth is required (true if TENANTS_JSON defines any apps)
  */
-export const REQUIRE_AUTH = Object.keys(APP_INDEX).length > 0;
 
+export const REQUIRE_AUTH = Object.keys(APP_INDEX).length > 0;
+export const HAS_TENANTS_CONFIG = Object.keys(TENANTS).length > 0;
 /**
- * Get tenantId from X-Tenant-Id header, or fallback to DEFAULT_TENANT_ID
- *
- * In strict mode (when REQUIRE_AUTH=true), header is preferred but falls back gracefully
- * In dev mode, defaults to DEFAULT_TENANT_ID or "local"
+ * Get tenantId from X-Tenant-Id header (strict, no fallbacks)
+ * Returns null if header is missing or empty
  */
-export function getTenantFromHeaders(headers: any): string {
+export function getTenantFromHeaders(headers: any): string | null {
   const fromHeader =
     headers?.["x-tenant-id"]?.toString()?.trim() ||
     headers?.["X-Tenant-Id"]?.toString()?.trim();
 
-  return fromHeader || process.env.DEFAULT_TENANT_ID || "local";
+  return fromHeader || null;
 }
 
 /**
- * Express request helper: get tenantId from request headers
+ * Express request helper: get tenantId from request headers (strict, no fallbacks)
+ * Returns null if header is missing or empty
  */
-export function getTenantId(req: Request): string {
+export function getTenantId(req: Request): string | null {
   const raw = req.header("x-tenant-id");
   const t = typeof raw === "string" ? raw.trim() : "";
-  return t || process.env.DEFAULT_TENANT_ID || "local";
+  return t || null;
 }
-
 
 /**
  * Backwards-compat export for header-based resolution
  */
-export function resolveTenantIdFromHeaders(headers: any): string {
+export function resolveTenantIdFromHeaders(headers: any): string | null {
   return getTenantFromHeaders(headers);
+}
+
+/**
+ * Require tenantId from request headers, throwing if missing
+ * Use this in routes that must have a tenantId
+ */
+export function requireTenantId(req: Request): string {
+  const tenantId = getTenantId(req);
+  if (!tenantId) {
+    throw new Error("MISSING_TENANT_ID");
+  }
+  return tenantId;
 }

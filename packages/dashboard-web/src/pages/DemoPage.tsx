@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { API_BASE, TENANT_ID } from "../lib/config";
-import { authHeaders } from "../lib/api";
+import {  demoHeaders } from "../lib/api";
 import type { Event } from "../lib/types";
 
 type Props = {
@@ -26,14 +26,14 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
 
       await fetch(`${API_BASE}/api/traces`, {
         method: "DELETE",
-        headers: authHeaders()
+        headers: demoHeaders()
       });
   
 
       // Seed demo traces
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
         method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        headers: { ...demoHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           apps: appsToSeed
         })
@@ -46,7 +46,7 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
       
       // Fetch loaded traces
       const eventsRes = await fetch(`${API_BASE}/api/traces`, {
-        headers: authHeaders()
+        headers: demoHeaders()
       });
       const data: Event[] = await eventsRes.json();
       const ordered = [...data].sort((a, b) => a.ts - b.ts);

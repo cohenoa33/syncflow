@@ -18,6 +18,7 @@ import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 
 function Dashboard() {
+
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -91,7 +92,7 @@ function Dashboard() {
     })();
 
     const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
-
+    console.log("[Dashboard] token:", token);   
     const socket = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
       auth: {
@@ -150,6 +151,7 @@ function Dashboard() {
     if (!demoModeEnabled) {
       return agents;
     }
+    if(!TENANT_ID) return [];
     // Show fake demo agents
     const demoApps = getDemoAppNames(TENANT_ID);
     return demoApps.map((appName) => ({
@@ -597,9 +599,10 @@ function Dashboard() {
                     setDemoModeEnabled(enabled);
                     // Refresh traces after toggle
                     try {
-                      const res = await fetch(`${API_BASE}/api/traces`, {
-                        headers: authHeaders()
-                      });
+                    const res = await fetch(
+                      `${API_BASE}/api/traces?demo=${enabled ? "1" : "0"}`,
+                      { headers: authHeaders() }
+                    );
                       const data: Event[] = await res.json();
                       const ordered = [...data].sort((a, b) => a.ts - b.ts);
                       setEvents(ordered);

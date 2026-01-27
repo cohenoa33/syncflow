@@ -19,8 +19,14 @@ export function registerInsightsRoutes(app: Express) {
   app.get("/api/insights/:traceId", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-      const tenantId = (req as any).tenantId || "local";
-
+      const tenantId = (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(500).json({
+          ok: false,
+          error: "BUG",
+          message: "tenantId not attached by auth middleware"
+        });
+      }
       const cached = await InsightModel.findOne({ tenantId, traceId }).lean();
       const fresh =
         cached?.computedAt && Date.now() - cached.computedAt < INSIGHT_TTL_MS;
@@ -115,8 +121,15 @@ export function registerInsightsRoutes(app: Express) {
   app.post("/api/insights/:traceId/regenerate", async (req, res) => {
     try {
       const traceId = req.params.traceId;
-      const tenantId = (req as any).tenantId || "local";
+      const tenantId = (req as any).tenantId;
       console.log("[Dashboard] Regenerating insight for trace", traceId);
+      if (!tenantId) {
+        return res.status(500).json({
+          ok: false,
+          error: "BUG",
+          message: "tenantId not attached by auth middleware"
+        });
+      }
 
       const traceEvents = await EventModel.find({ tenantId, traceId })
         .sort({ ts: 1 })

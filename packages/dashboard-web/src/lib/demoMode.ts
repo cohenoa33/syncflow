@@ -1,6 +1,6 @@
 import { TENANT_ID } from "./config";
 
-const DEMO_MODE_KEY = (tenantId: string) => `syncflow:demoMode:${tenantId}`;
+const DEMO_MODE_KEY = (tenantId: string | undefined) => `syncflow:demoMode:${tenantId }`;
 
 export function getDemoMode(): boolean {
   const stored = localStorage.getItem(DEMO_MODE_KEY(TENANT_ID));

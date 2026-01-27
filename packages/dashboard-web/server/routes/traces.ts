@@ -5,19 +5,35 @@ import type { Server } from "socket.io";
 import { eventsBuffer } from "../state";
 
 export function registerTracesRoutes(app: Express, io: Server) {
-  app.get("/api/traces", async (req, res) => {
-    const tenantId = (req as any).tenantId || "local";
+app.get("/api/traces", async (req, res) => {
+  const tenantId = (req as any).tenantId;
+  const demo = req.query.demo === "1";
 
-    const latest = await EventModel.find({ tenantId })
-      .sort({ ts: -1 })
-      .limit(1000)
-      .lean();
+  const query: any = { tenantId };
 
-    res.json(latest);
-  });
+  if (demo) {
+    query.source = "demo";
+  } else {
+    query.source = { $ne: "demo" };
+  }
+
+  const latest = await EventModel.find(query)
+    .sort({ ts: -1 })
+    .limit(1000)
+    .lean();
+
+  res.json(latest);
+});
 
   app.delete("/api/traces", async (req, res) => {
-    const tenantId = (req as any).tenantId || "local";
+    const tenantId = (req as any).tenantId;
+    if (!tenantId) {
+      return res.status(500).json({
+        ok: false,
+        error: "BUG",
+        message: "tenantId not attached by auth middleware"
+      });
+    }
 
     // Only delete real events (not demo-seeded)
     await EventModel.deleteMany({ tenantId, source: { $ne: "demo" } });
