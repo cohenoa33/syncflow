@@ -1,6 +1,8 @@
+//  packages/dashboard-web/src/pages/DemoPage.tsx 
 import { useState } from "react";
 import { API_BASE, TENANT_ID } from "../lib/config";
-import {  demoHeaders } from "../lib/api";
+import { demoHeaders } from "../lib/api";
+import { getDemoAppNames } from "../lib/demoMode";
 import type { Event } from "../lib/types";
 
 type Props = {
@@ -14,28 +16,20 @@ type Props = {
 
 export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
   const [loading, setLoading] = useState(false);
-  const isDemoTenant = TENANT_ID === "demo";
 
   const runDemo = async () => {
     try {
       setLoading(true);
-      // For demo tenant, seed demo apps
-      const appsToSeed = isDemoTenant
-        ? ["demo-app-1", "demo-app-2"]
-        : ["mern-sample-app", "mern-sample-app-2"];
 
-      await fetch(`${API_BASE}/api/traces`, {
-        method: "DELETE",
-        headers: demoHeaders()
-      });
-  
+      // Use tenant-scoped demo app names
+      const demoApps = getDemoAppNames(TENANT_ID);
 
-      // Seed demo traces
+      // Seed demo traces (server will clear existing demo data for this tenant)
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
         method: "POST",
         headers: { ...demoHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          apps: appsToSeed
+          apps: demoApps
         })
       });
       const json: {
@@ -43,8 +37,8 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
         count: number;
         traceIdsByApp?: Record<string, string[]>;
       } = await res.json();
-      
-      // Fetch loaded traces
+
+      // Fetch all traces (includes both demo and real)
       const eventsRes = await fetch(`${API_BASE}/api/traces`, {
         headers: demoHeaders()
       });
@@ -90,21 +84,18 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
     <div className="min-h-screen bg-linear-to-br from-indigo-50 to-blue-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
         <h1 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-          {isDemoTenant ? "Load Demo Data" : "Load Sample Data"}
+          Load Demo Data
         </h1>
         <p className="text-gray-600 text-center mb-8">
           Click the button below to load sample trace data and explore the
           dashboard features.
         </p>
         <p className="text-xs text-gray-500 text-center mt-6">
-          {isDemoTenant
-            ? "This will seed realistic demo traces to the demo tenant. Use this to explore the dashboard features without running a live application."
-            : "This will remove all existing trace data and replace it with sample demo traces."}
-        </p>{" "}
+          This will seed realistic demo traces to tenant "{TENANT_ID}". Demo
+          data is isolated and does not affect real trace data.
+        </p>
         <p className="text-xs text-gray-500 text-center mt-2 mb-6">
-          {isDemoTenant
-            ? "Demo data is isolated to the 'demo' tenant and does not affect production data."
-            : "Sample apps: mern-sample-app, mern-sample-app-2"}
+          Demo apps: {getDemoAppNames(TENANT_ID).join(", ")}
         </p>
         <div className="space-y-4">
           <button
