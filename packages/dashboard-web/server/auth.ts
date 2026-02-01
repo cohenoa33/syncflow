@@ -1,18 +1,27 @@
 import type { Request, Response, NextFunction } from "express";
-import { REQUIRE_AUTH, TENANTS, getTenantFromHeaders } from "./tenants";
+import {
+  TENANTS,
+  getTenantFromHeaders,
+  getAuthConfig
+} from "./tenants";
 
 /**
- * Tenant-aware API key validation middleware
+ * Express middleware: Require API key authentication for dashboard viewer routes
  *
- * AUTH_MODE env var controls behavior:
- * - "strict": X-Tenant-Id header required, must exist in TENANTS_JSON, Bearer token must match dashboard key
- * - "dev" (default): X-Tenant-Id required. If TENANTS_JSON is empty, allow any tenant. If tenant in TENANTS_JSON, enforce keys.
+ * Validates:
+ * 1. X-Tenant-Id header is present
+ * 2. If TENANTS_JSON is configured:
+ *    a. Tenant exists in TENANTS
+ *    b. Bearer token is present in Authorization header
+ *    c. Token is valid dashboard viewer key for the tenant
+ *
+ * On success, attaches tenantId to req. On failure, responds with 4xx error.
  */
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
-  const authMode = (process.env.AUTH_MODE || "dev").toLowerCase();
-
-  // ALWAYS require X-Tenant-Id header (no fallback)
+  const { hasTenantsConfig } = getAuthConfig();
+  // Step 1: ALWAYS require X-Tenant-Id header (no fallback)
   const tenantFromHeader = getTenantFromHeaders(req.headers);
+
   if (!tenantFromHeader) {
     console.log(`[Dashboard] ❌ Auth failed: Missing X-Tenant-Id header`);
     return res.status(400).json({
@@ -22,64 +31,29 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
     });
   }
 
-  if (authMode === "strict") {
-    // STRICT MODE: Tenant must exist in TENANTS_JSON
-    if (!TENANTS[tenantFromHeader]) {
-      console.log(
-        `[Dashboard] ❌ Auth failed: Tenant "${tenantFromHeader}" not found in TENANTS_JSON (strict mode)`
-      );
-      return res.status(401).json({
-        ok: false,
-        error: "UNAUTHORIZED",
-        message: "Unknown tenant"
-      });
-    }
-
-    // Bearer token required in strict mode
-    const auth = req.headers.authorization || "";
-    const token = auth.startsWith("Bearer ")
-      ? auth.slice("Bearer ".length)
-      : null;
-
-    if (!token) {
-      console.log(
-        `[Dashboard] ❌ Auth failed: Missing Bearer token (strict mode, tenant: ${tenantFromHeader})`
-      );
-      return res.status(401).json({
-        ok: false,
-        error: "UNAUTHORIZED",
-        message: "Missing or invalid API key"
-      });
-    }
-
-    // Validate token against dashboards config for this tenant
-    if (!validateDashboardViewerToken(tenantFromHeader, token)) {
-      console.log(
-        `[Dashboard] ❌ Auth failed: Invalid token for tenant "${tenantFromHeader}" (strict mode)`
-      );
-      return res.status(401).json({
-        ok: false,
-        error: "UNAUTHORIZED",
-        message: "Missing or invalid API key"
-      });
-    }
-
-    // STRICT MODE: Valid, attach tenantId and continue
-    (req as any).tenantId = tenantFromHeader;
-    return next();
-  }
-
-  // DEV MODE (default)
-  // If TENANTS_JSON is empty, allow any tenant (no token required)
-  if (!REQUIRE_AUTH) {
+  // Step 2: If no TENANTS_JSON configured, allow request through (routes decide data availability)
+  if (!hasTenantsConfig) {
     console.log(
-      `[Dashboard] ✅ Auth skipped: Dev mode with no TENANTS_JSON (tenant: ${tenantFromHeader})`
+      `[Dashboard] ⚠️  No TENANTS_JSON configured, allowing tenant "${tenantFromHeader}" through`
     );
     (req as any).tenantId = tenantFromHeader;
     return next();
   }
 
-  // If TENANTS_JSON has apps/tenants defined, enforce authentication
+  // Step 3: If TENANTS_JSON has tenants, enforce strict validation
+  // 3a: Tenant must exist in TENANTS
+  if (!TENANTS[tenantFromHeader]) {
+    console.log(
+      `[Dashboard] ❌ Auth failed: Tenant "${tenantFromHeader}" not found in TENANTS_JSON`
+    );
+    return res.status(401).json({
+      ok: false,
+      error: "UNAUTHORIZED",
+      message: "Unknown tenant"
+    });
+  }
+
+  // 3b: Require Bearer token
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ")
     ? auth.slice("Bearer ".length)
@@ -87,18 +61,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
 
   if (!token) {
     console.log(
-      `[Dashboard] ❌ Auth failed: Missing Bearer token (dev mode with TENANTS_JSON, tenant: ${tenantFromHeader})`
-    );
-    return res.status(401).json({
-      ok: false,
-      error: "UNAUTHORIZED",
-      message: "Missing or invalid API key"
-    });
-  }
-  // Validate token against dashboards config for this tenant
-  if (!validateDashboardViewerToken(tenantFromHeader, token)) {
-    console.log(
-      `[Dashboard] ❌ Auth failed: Invalid token for tenant "${tenantFromHeader}" (dev mode with TENANTS_JSON)`
+      `[Dashboard] ❌ Auth failed: Missing Bearer token (tenant: ${tenantFromHeader})`
     );
     return res.status(401).json({
       ok: false,
@@ -107,11 +70,23 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
     });
   }
 
+  // 3c: Validate token against dashboards config for this tenant
+  if (!validateDashboardViewerToken(tenantFromHeader, token)) {
+    console.log(
+      `[Dashboard] ❌ Auth failed: Invalid token for tenant "${tenantFromHeader}"`
+    );
+    return res.status(401).json({
+      ok: false,
+      error: "UNAUTHORIZED",
+      message: "Missing or invalid API key"
+    });
+  }
+
+  // All validations passed
   console.log(
     `[Dashboard] ✅ Auth success: Valid token for tenant "${tenantFromHeader}"`
   );
   (req as any).tenantId = tenantFromHeader;
-
   next();
 }
 
@@ -126,13 +101,7 @@ export function validateDashboardViewerToken(
   token: string
 ): boolean {
   const dashboards = TENANTS[tenantId]?.dashboards ?? {};
-  
   const isValid = token in dashboards;
-  console.log(
-    `!!!![Dashboard] Token validation for tenant "${tenantId}": ${
-      isValid ? "✅ valid" : "❌ invalid"
-    } (${Object.keys(dashboards).length} dashboard keys configured), token: "${token}", dashboards: ${Object.keys(dashboards).join(", ")}"`
-  );
 
   return isValid;
 }

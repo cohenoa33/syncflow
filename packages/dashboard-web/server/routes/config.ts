@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { getAuthConfig } from "../tenants";
 
 /**
  * Public config endpoint - exposes demo mode availability to frontend
@@ -7,7 +8,7 @@ import type { Express } from "express";
 export function registerConfigRoutes(app: Express) {
   app.get("/api/config", (req, res) => {
     const demoModeEnabled = process.env.DEMO_MODE_ENABLED === "true";
-    const authMode = (process.env.AUTH_MODE || "dev").toLowerCase();
+    const { authMode } = getAuthConfig();
     const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
 
     // Demo is effectively available only if:

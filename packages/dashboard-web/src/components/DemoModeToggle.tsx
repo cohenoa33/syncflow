@@ -14,7 +14,6 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
 
   const handleToggle = async () => {
     const newValue = !demoEnabled;
-    console.log("[Dashboard] Toggling demo mode:", newValue);
     setLoading(true);
 
     try {
@@ -26,7 +25,11 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
         const demoApps = getDemoAppNames(TENANT_ID);
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "POST",
-          headers: { ...demoHeaders(), "Content-Type": "application/json" },
+          headers: { 
+            ...demoHeaders(), 
+            "Content-Type": "application/json",
+            "X-Demo-Request": "true"
+          },
           body: JSON.stringify({ apps: demoApps })
         });
 

@@ -18,7 +18,7 @@ import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 
 function Dashboard() {
-
+  
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -68,7 +68,8 @@ function Dashboard() {
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
     let isMounted = true;
-
+    console.log("[Dashboard] API_BASE", API_BASE);
+    console.log("[Dashboard] SOCKET_URL", SOCKET_URL);
     (async () => {
       try {
         setLoadingHistory(true);
@@ -92,7 +93,6 @@ function Dashboard() {
     })();
 
     const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
-    console.log("[Dashboard] token:", token);   
     const socket = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
       auth: {
@@ -104,17 +104,19 @@ function Dashboard() {
     socket.on("connect", () => {
       setConnected(true);
       // Join tenant room on connect
-      socket.emit("join_tenant", { tenantId: TENANT_ID });
+      const token = (
+        import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined
+      )?.trim();
+
+      socket.emit("join_tenant", {
+        tenantId: TENANT_ID,
+        token
+      });
     });
     socket.on("disconnect", () => setConnected(false));
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
-      console.log("[socket event]", {
-        app: event.appName,
-        tenantId: (event as any).tenantId
-      });
-
       setEvents((prev) => [...prev, event].slice(-1000));
       setOpenMap((m) => ({ ...m, [event.id]: false }));
 
@@ -131,6 +133,9 @@ function Dashboard() {
       setTraceOpenMap(traceOpen);
     });
 
+    socket.on("auth_error", (e) => {
+      console.error("[socket auth_error]", e);
+    });
     return () => {
       isMounted = false;
       socket.close();
@@ -151,7 +156,7 @@ function Dashboard() {
     if (!demoModeEnabled) {
       return agents;
     }
-    if(!TENANT_ID) return [];
+    if (!TENANT_ID) return [];
     // Show fake demo agents
     const demoApps = getDemoAppNames(TENANT_ID);
     return demoApps.map((appName) => ({
@@ -597,24 +602,8 @@ function Dashboard() {
                 <DemoModeToggle
                   onToggle={async (enabled) => {
                     setDemoModeEnabled(enabled);
-                    // Refresh traces after toggle
-                    try {
-                    const res = await fetch(
-                      `${API_BASE}/api/traces?demo=${enabled ? "1" : "0"}`,
-                      { headers: authHeaders() }
-                    );
-                      const data: Event[] = await res.json();
-                      const ordered = [...data].sort((a, b) => a.ts - b.ts);
-                      setEvents(ordered);
-                      const { open, traceOpen } = buildInitialMaps(ordered);
-                      setOpenMap(open);
-                      setTraceOpenMap(traceOpen);
-                    } catch (err) {
-                      console.error(
-                        "[Dashboard] failed to refresh traces",
-                        err
-                      );
-                    }
+                    // Note: No need to refresh traces - client-side filtering handles it
+                    // Demo events come from /api/demo-seed POST, not from toggle
                   }}
                   disabled={!connected}
                 />

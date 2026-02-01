@@ -1,4 +1,3 @@
-
 // Load environment variables BEFORE any other imports
 import { loadServerEnv } from "./env";
 loadServerEnv();
@@ -15,8 +14,11 @@ import { registerInsightsRoutes } from "./routes/insights";
 import { registerConfigRoutes } from "./routes/config";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
+import { getAuthConfig } from "./tenants";
 
 async function main() {
+  // Initialize and log auth configuration at startup
+  getAuthConfig();
 
   await connectMongo().catch((err) => {
     console.error("[Dashboard] ❌ Mongo error", err);

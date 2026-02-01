@@ -3,7 +3,7 @@ import type { Server as HttpServer } from "http";
 import { EventModel } from "./models";
 import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
-import { APP_INDEX, REQUIRE_AUTH, getTenantFromHeaders } from "./tenants";
+import { APP_INDEX, TENANTS, getAuthConfig } from "./tenants";
 import { validateDashboardViewerToken } from "./auth";
 
 export function attachSocketServer(httpServer: HttpServer) {
@@ -30,6 +30,8 @@ export function attachSocketServer(httpServer: HttpServer) {
 
     socket.on("register", (data) => {
       console.log("[Socket] register", socket.id, "appName:", data?.appName);
+
+      const { hasTenantsConfig, requireAgentAuth } = getAuthConfig();
       const appName = data?.appName;
       const token = data?.token;
 
@@ -44,9 +46,19 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      if (REQUIRE_AUTH) {
+      if (!hasTenantsConfig) {
+        socket.emit("auth_error", {
+          ok: false,
+          error: "TENANTS_NOT_CONFIGURED",
+          message: "TENANTS_JSON is not configured; agents are disabled."
+        });
+        socket.disconnect(true);
+        return;
+      }
+      if (requireAgentAuth) {
         const rec = APP_INDEX[appName]; // { tenantId, token }
         const expected = rec?.token;
+
         if (!expected || token !== expected) {
           console.warn("[Dashboard] Unauthorized agent:", socket.id, appName);
           socket.emit("auth_error", { ok: false, error: "UNAUTHORIZED" });
@@ -57,7 +69,6 @@ export function attachSocketServer(httpServer: HttpServer) {
         // Derive tenantId from APP_INDEX, ignore any tenantId sent by agent
         socket.data.tenantId = rec.tenantId;
       } else {
-        // Dev mode without TENANTS_JSON: require tenantId from agent payload
         const tenantId = data?.tenantId?.trim();
         if (!tenantId) {
           console.warn(
@@ -68,6 +79,17 @@ export function attachSocketServer(httpServer: HttpServer) {
           socket.disconnect(true);
           return;
         }
+
+        if (!TENANTS[tenantId]) {
+          socket.emit("auth_error", {
+            ok: false,
+            error: "UNAUTHORIZED",
+            message: "Unknown tenant"
+          });
+          socket.disconnect(true);
+          return;
+        }
+
         socket.data.tenantId = tenantId;
       }
 
@@ -105,6 +127,8 @@ export function attachSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("event", async (data) => {
+      const { hasTenantsConfig } = getAuthConfig();
+      if (!hasTenantsConfig) return;
       if (!authedSockets.has(socket.id)) {
         console.warn(
           "[Dashboard] Dropping event from unauthed socket:",
@@ -180,45 +204,85 @@ export function attachSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("join_tenant", (data) => {
-      const tenantIdFromData = data?.tenantId?.trim();
+      const { hasTenantsConfig } = getAuthConfig();
 
-      // ALWAYS require explicit tenantId
-      if (!tenantIdFromData) {
+      // Step 1: Always require tenantId in payload (trim)
+      const tenantId =
+        typeof data?.tenantId === "string" ? data.tenantId.trim() : "";
+
+      if (!tenantId) {
         console.warn("[Dashboard] Missing tenantId in join_tenant:", socket.id);
         socket.emit("auth_error", { ok: false, error: "MISSING_TENANT_ID" });
         socket.disconnect(true);
         return;
       }
 
-      const tenantId = tenantIdFromData;
-
-      // In strict mode, validate viewer token
-      if (REQUIRE_AUTH) {
-        const token = data?.token || socket.handshake.auth?.token;
-
-        if (!token) {
-          socket.emit("auth_error", {
-            ok: false,
-            error: "UNAUTHORIZED",
-            message: "Missing or invalid viewer token"
-          });
-          return;
-        }
-
-        if (!validateDashboardViewerToken(tenantId, token)) {
-          socket.emit("auth_error", {
-            ok: false,
-            error: "UNAUTHORIZED",
-            message: "Missing or invalid viewer token"
-          });
-          return;
-        }
+      if (!hasTenantsConfig) {
+        socket.emit("auth_error", {
+          ok: false,
+          error: "TENANTS_NOT_CONFIGURED",
+          message:
+            "TENANTS_JSON is not configured; no tenant data is available."
+        });
+        return; // do NOT join room
       }
 
+      // Step 3: If TENANTS_JSON has tenants, enforce strict validation
+      // 3a: Tenant must exist in TENANTS
+      if (!TENANTS[tenantId]) {
+        console.warn(
+          `[Dashboard] ❌ join_tenant: Tenant "${tenantId}" not found in TENANTS_JSON`
+        );
+        socket.emit("auth_error", {
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Unknown tenant"
+        });
+        socket.disconnect(true);
+        return;
+      }
+
+      // 3b: Require viewer token from data.token OR socket.handshake.auth.token
+      const token =
+        (typeof data?.token === "string" ? data.token.trim() : "") ||
+        (typeof socket.handshake.auth?.token === "string"
+          ? socket.handshake.auth.token.trim()
+          : "");
+
+      if (!token) {
+        console.warn(
+          `[Dashboard] ❌ join_tenant: Missing viewer token (tenant: ${tenantId})`
+        );
+        socket.emit("auth_error", {
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid viewer token"
+        });
+        socket.disconnect(true);
+        return;
+      }
+
+      // 3c: Validate token against dashboards config for this tenant
+      if (!validateDashboardViewerToken(tenantId, token)) {
+        console.warn(
+          `[Dashboard] ❌ join_tenant: Invalid viewer token (tenant: ${tenantId})`
+        );
+        socket.emit("auth_error", {
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid viewer token"
+        });
+        socket.disconnect(true);
+        return;
+      }
+
+      // All validations passed
+      console.log(
+        `[Dashboard] ✅ join_tenant success: Valid token for tenant "${tenantId}"`
+      );
       socket.data.tenantId = tenantId;
       socket.join(`tenant:${tenantId}`);
 
-      // Emit tenant-scoped agents list to this socket
       socket.emit(
         "agents",
         Array.from(connectedAgents.values()).filter(

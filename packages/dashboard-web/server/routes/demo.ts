@@ -3,8 +3,8 @@
  *
  * Behavior:
  * - Dev mode (AUTH_MODE=dev): No demo token required
- * - Strict mode (AUTH_MODE=strict): Requires Authorization: Bearer ${DEMO_MODE_TOKEN}
- * - All operations are tenant-scoped (use X-Tenant-Id header)
+ * - Strict mode (AUTH_MODE=strict): Requires X-Demo-Token: ${DEMO_MODE_TOKEN}
+ * - All operations are tenant-scoped (use req.tenantId from auth middleware)
  * - Demo events marked with source: "demo" (preserves real data)
  * - Demo apps named: demo-${tenantId}-app, demo-app-${tenantId}
  * - Socket broadcasts to tenant room only: tenant:${tenantId}
@@ -15,37 +15,55 @@ import { EventModel } from "../models";
 import { eventsBuffer } from "../state";
 import { generateDemoTraces } from "../demo/seed";
 import type { Request } from "express";
+import { getAuthConfig } from "../tenants";
 
 const DEMO_SOURCE = "demo";
 
-function isDemoModeEnabled(): boolean {
-  return process.env.DEMO_MODE_ENABLED === "true";
+/**
+ * Check if demo mode is enabled based on config rules:
+ * - DEMO_MODE_ENABLED must be "true"
+ * - In dev mode: always enabled if DEMO_MODE_ENABLED=true
+ * - In strict mode: only enabled if DEMO_MODE_TOKEN is configured (non-empty)
+ */
+function isDemoAvailable(): boolean {
+  const demoModeEnabled = process.env.DEMO_MODE_ENABLED === "true";
+  if (!demoModeEnabled) return false;
+
+  const { authMode } = getAuthConfig();
+  const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+
+  // In dev mode, demo is available if DEMO_MODE_ENABLED=true
+  if (authMode === "dev") return true;
+
+  // In strict mode, demo is available only if DEMO_MODE_TOKEN is configured
+  return authMode === "strict" && demoToken !== "";
 }
 
-function getAuthMode(): "dev" | "strict" {
-  const mode = (process.env.AUTH_MODE || "dev").toLowerCase();
-  return mode === "strict" ? "strict" : "dev";
-}
-
+/**
+ * Validate demo token based on auth mode:
+ * - Dev mode: no token required, always returns true
+ * - Strict mode: requires X-Demo-Token header matching DEMO_MODE_TOKEN
+ */
 function validateDemoToken(req: Request): boolean {
-  const authMode = getAuthMode();
-  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+  const { authMode } = getAuthConfig();
 
   // Dev: allow demo without token
   if (authMode === "dev") return true;
 
-  // Strict: must have DEMO_MODE_TOKEN configured AND must match header
+  // Strict: must have DEMO_MODE_TOKEN configured AND must match X-Demo-Token header
+  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
   if (!expected) return false;
 
-  const got = (req.headers["x-demo-token"] as string | undefined)?.trim() ?? "";
-  return got !== "" && got === expected;
+  const provided = (req.headers["x-demo-token"] ?? "").toString().trim();
+
+  return provided === expected;
 }
 
 export function registerDemoRoutes(app: Express, io: Server) {
   app.post("/api/demo-seed", async (req, res) => {
     try {
-      // Gate 1: Demo mode must be enabled
-      if (!isDemoModeEnabled()) {
+      // Gate 1: Demo mode must be enabled by config rules
+      if (!isDemoAvailable()) {
         return res.status(403).json({
           ok: false,
           error: "DEMO_MODE_DISABLED",
@@ -53,7 +71,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Gate 2: In strict mode, require demo token
+      // Gate 2: Validate demo token based on auth mode
       if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
@@ -62,6 +80,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
+      // Rely on req.tenantId from auth middleware
       const tenantId = (req as any).tenantId;
       if (!tenantId) {
         return res.status(500).json({
@@ -124,7 +143,8 @@ export function registerDemoRoutes(app: Express, io: Server) {
 
   app.delete("/api/demo-seed", async (req, res) => {
     try {
-      if (!isDemoModeEnabled()) {
+      // Gate 1: Demo mode must be enabled by config rules
+      if (!isDemoAvailable()) {
         return res.status(403).json({
           ok: false,
           error: "DEMO_MODE_DISABLED",
@@ -132,6 +152,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
+      // Gate 2: Validate demo token based on auth mode
       if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
@@ -140,6 +161,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
+      // Rely on req.tenantId from auth middleware
       const tenantId = (req as any).tenantId;
       if (!tenantId) {
         return res.status(500).json({
@@ -172,3 +194,4 @@ export function registerDemoRoutes(app: Express, io: Server) {
     }
   });
 }
+
