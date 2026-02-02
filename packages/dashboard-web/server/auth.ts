@@ -1,9 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import {
-  TENANTS,
-  getTenantFromHeaders,
-  getAuthConfig
-} from "./tenants";
+import { TENANTS, getTenantFromHeaders, getAuthConfig } from "./tenants";
 
 /**
  * Express middleware: Require API key authentication for dashboard viewer routes
@@ -19,6 +15,7 @@ import {
  */
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   const { hasTenantsConfig } = getAuthConfig();
+
   // Step 1: ALWAYS require X-Tenant-Id header (no fallback)
   const tenantFromHeader = getTenantFromHeaders(req.headers);
 
@@ -54,10 +51,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   }
 
   // 3b: Require Bearer token
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ")
-    ? auth.slice("Bearer ".length)
-    : null;
+  const token = extractBearer(req);
 
   if (!token) {
     console.log(
@@ -87,21 +81,25 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
     `[Dashboard] ✅ Auth success: Valid token for tenant "${tenantFromHeader}"`
   );
   (req as any).tenantId = tenantFromHeader;
-  next();
+  return next();
 }
 
 /**
  * Helper: Validate that a token is a valid dashboard viewer key for a tenant
  *
- * This checks if the token exists as a key in TENANTS[tenantId].dashboards
- * Returns true if token is a valid viewer key for the tenant.
+ * This checks if the token exists as an OWN key in TENANTS[tenantId].dashboards
+ * (prevents prototype-chain bypass like "toString" in {}).
  */
 export function validateDashboardViewerToken(
   tenantId: string,
   token: string
 ): boolean {
   const dashboards = TENANTS[tenantId]?.dashboards ?? {};
-  const isValid = token in dashboards;
+  return Object.prototype.hasOwnProperty.call(dashboards, token);
+}
 
-  return isValid;
+function extractBearer(req: Request): string {
+  const raw = String(req.headers.authorization ?? "").trim();
+  if (!raw.toLowerCase().startsWith("bearer ")) return "";
+  return raw.slice("bearer ".length).trim();
 }

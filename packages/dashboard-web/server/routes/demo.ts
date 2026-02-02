@@ -3,66 +3,86 @@
  *
  * Behavior:
  * - Dev mode (AUTH_MODE=dev): No demo token required
- * - Strict mode (AUTH_MODE=strict): Requires X-Demo-Token: ${DEMO_MODE_TOKEN}
+ * - Strict mode (AUTH_MODE=strict): Requires demo token
+ *   - If TENANTS_JSON configured: X-Demo-Token: ${DEMO_MODE_TOKEN}
+ *   - If TENANTS_JSON empty: Authorization: Bearer ${DEMO_MODE_TOKEN}
  * - All operations are tenant-scoped (use req.tenantId from auth middleware)
  * - Demo events marked with source: "demo" (preserves real data)
  * - Demo apps named: demo-${tenantId}-app, demo-app-${tenantId}
  * - Socket broadcasts to tenant room only: tenant:${tenantId}
  */
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import type { Server } from "socket.io";
 import { EventModel } from "../models";
 import { eventsBuffer } from "../state";
 import { generateDemoTraces } from "../demo/seed";
-import type { Request } from "express";
 import { getAuthConfig } from "../tenants";
 
 const DEMO_SOURCE = "demo";
 
+function extractBearerToken(req: Request): string {
+  const auth = String(req.headers.authorization ?? "").trim();
+  if (!auth.toLowerCase().startsWith("bearer ")) return "";
+  return auth.slice("bearer ".length).trim();
+}
+
+function isTenantsConfigured(): boolean {
+  const raw = String(process.env.TENANTS_JSON ?? "").trim();
+  if (!raw) return false;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return (
+      !!parsed && typeof parsed === "object" && Object.keys(parsed).length > 0
+    );
+  } catch {
+    // If invalid JSON is set, treat as configured (fail closed)
+    return true;
+  }
+}
+
 /**
  * Check if demo mode is enabled based on config rules:
  * - DEMO_MODE_ENABLED must be "true"
- * - In dev mode: always enabled if DEMO_MODE_ENABLED=true
- * - In strict mode: only enabled if DEMO_MODE_TOKEN is configured (non-empty)
+ * - In dev mode: enabled if DEMO_MODE_ENABLED=true
+ * - In strict mode: enabled only if DEMO_MODE_TOKEN is configured (non-empty)
  */
 function isDemoAvailable(): boolean {
-  const demoModeEnabled = process.env.DEMO_MODE_ENABLED === "true";
-  if (!demoModeEnabled) return false;
+  if (process.env.DEMO_MODE_ENABLED !== "true") return false;
 
   const { authMode } = getAuthConfig();
-  const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
-
-  // In dev mode, demo is available if DEMO_MODE_ENABLED=true
   if (authMode === "dev") return true;
 
-  // In strict mode, demo is available only if DEMO_MODE_TOKEN is configured
-  return authMode === "strict" && demoToken !== "";
+  const demoToken = String(process.env.DEMO_MODE_TOKEN ?? "").trim();
+  return authMode === "strict" && demoToken.length > 0;
 }
 
 /**
  * Validate demo token based on auth mode:
- * - Dev mode: no token required, always returns true
- * - Strict mode: requires X-Demo-Token header matching DEMO_MODE_TOKEN
+ * - Dev mode: no token required
+ * - Strict mode:
+ *   - If TENANTS_JSON configured: requires X-Demo-Token header
+ *   - If TENANTS_JSON empty: requires Authorization Bearer token
  */
 function validateDemoToken(req: Request): boolean {
   const { authMode } = getAuthConfig();
-
-  // Dev: allow demo without token
   if (authMode === "dev") return true;
 
-  // Strict: must have DEMO_MODE_TOKEN configured AND must match X-Demo-Token header
-  const expected = (process.env.DEMO_MODE_TOKEN ?? "").trim();
+  const expected = String(process.env.DEMO_MODE_TOKEN ?? "").trim();
   if (!expected) return false;
 
-  const provided = (req.headers["x-demo-token"] ?? "").toString().trim();
+  if (isTenantsConfigured()) {
+    const provided = String(req.headers["x-demo-token"] ?? "").trim();
+    return provided === expected;
+  }
 
-  return provided === expected;
+  const bearer = extractBearerToken(req);
+  return bearer === expected;
 }
 
 export function registerDemoRoutes(app: Express, io: Server) {
   app.post("/api/demo-seed", async (req, res) => {
     try {
-      // Gate 1: Demo mode must be enabled by config rules
       if (!isDemoAvailable()) {
         return res.status(403).json({
           ok: false,
@@ -71,7 +91,6 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Gate 2: Validate demo token based on auth mode
       if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
@@ -80,8 +99,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Rely on req.tenantId from auth middleware
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId as string | undefined;
       if (!tenantId) {
         return res.status(500).json({
           ok: false,
@@ -90,16 +108,14 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Generate demo app names for this tenant
       const demoApps = [`demo-${tenantId}-app`, `demo-app-${tenantId}`];
 
-      // Use apps from request body if provided, otherwise use generated demo apps
-      const requested =
-        Array.isArray(req.body?.apps) && req.body.apps.length > 0
-          ? req.body.apps
+      const requested: string[] =
+        Array.isArray((req as any).body?.apps) && (req as any).body.apps.length
+          ? (req as any).body.apps
           : demoApps;
 
-      // ✅ Only delete demo-seeded traces for this tenant (do NOT wipe real data)
+      // Only delete demo-seeded traces for this tenant (do NOT wipe real data)
       await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
 
       const all: any[] = [];
@@ -143,7 +159,6 @@ export function registerDemoRoutes(app: Express, io: Server) {
 
   app.delete("/api/demo-seed", async (req, res) => {
     try {
-      // Gate 1: Demo mode must be enabled by config rules
       if (!isDemoAvailable()) {
         return res.status(403).json({
           ok: false,
@@ -152,7 +167,6 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Gate 2: Validate demo token based on auth mode
       if (!validateDemoToken(req)) {
         return res.status(401).json({
           ok: false,
@@ -161,8 +175,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // Rely on req.tenantId from auth middleware
-      const tenantId = (req as any).tenantId;
+      const tenantId = (req as any).tenantId as string | undefined;
       if (!tenantId) {
         return res.status(500).json({
           ok: false,
@@ -171,7 +184,7 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      // ✅ Only delete demo-seeded events for this tenant
+      // Only delete demo-seeded events for this tenant
       await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
 
       // remove demo events for this tenant from in-memory buffer
@@ -194,4 +207,3 @@ export function registerDemoRoutes(app: Express, io: Server) {
     }
   });
 }
-

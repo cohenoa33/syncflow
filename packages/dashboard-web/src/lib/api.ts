@@ -13,7 +13,7 @@ export function authHeaders(): HeadersInit {
   return headers;
 }
 
-export function demoHeaders(): HeadersInit {
+export function demoHeaders(requiresDemoToken = false): HeadersInit {
   const headers: Record<string, string> = {};
 
   // Always include tenant ID (required)
@@ -26,9 +26,11 @@ export function demoHeaders(): HeadersInit {
   }
 
   // Include demo token separately (required for demo routes in strict mode)
-  const demoToken = import.meta.env.VITE_DEMO_MODE_TOKEN;
-  if (demoToken) {
-    headers["X-Demo-Token"] = demoToken;
+  if (requiresDemoToken) {
+    const demoToken = import.meta.env.VITE_DEMO_MODE_TOKEN;
+    if (demoToken) {
+      headers["X-Demo-Token"] = demoToken;
+    }
   }
 
   return headers;

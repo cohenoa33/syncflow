@@ -6,9 +6,14 @@ import { getDemoMode, setDemoMode, getDemoAppNames } from "../lib/demoMode";
 type Props = {
   onToggle: (enabled: boolean) => void;
   disabled?: boolean;
+  requiresDemoToken: boolean;
 };
 
-export function DemoModeToggle({ onToggle, disabled }: Props) {
+export function DemoModeToggle({
+  onToggle,
+  disabled,
+  requiresDemoToken
+}: Props) {
   const [demoEnabled, setDemoEnabled] = useState(getDemoMode());
   const [loading, setLoading] = useState(false);
 
@@ -19,14 +24,14 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
     try {
       if (newValue) {
         if (!TENANT_ID) {
-         return
+          return;
         }
         // Turning ON: seed demo data
         const demoApps = getDemoAppNames(TENANT_ID);
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "POST",
-          headers: { 
-            ...demoHeaders(), 
+          headers: {
+            ...demoHeaders(requiresDemoToken),
             "Content-Type": "application/json",
             "X-Demo-Request": "true"
           },
@@ -41,7 +46,7 @@ export function DemoModeToggle({ onToggle, disabled }: Props) {
         // Turning OFF: clear demo data
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "DELETE",
-          headers: demoHeaders()
+          headers: demoHeaders(requiresDemoToken)
         });
 
         if (!res.ok) {

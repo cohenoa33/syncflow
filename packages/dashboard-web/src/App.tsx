@@ -18,7 +18,6 @@ import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 
 function Dashboard() {
-  
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -51,6 +50,7 @@ function Dashboard() {
   // ----- Demo mode state -----
   const [demoModeEnabled, setDemoModeEnabled] = useState(getDemoMode());
   const [showDemoToggle, setShowDemoToggle] = useState(false);
+  const [requiresDemoToken, setRequiresDemoToken] = useState(false);
 
   // ----- Fetch demo config to determine toggle visibility -----
   useEffect(() => {
@@ -59,6 +59,7 @@ function Dashboard() {
         // Show toggle based on server's demoModeEnabled flag
         // (which already accounts for AUTH_MODE and DEMO_MODE_TOKEN)
         setShowDemoToggle(config.demoModeEnabled);
+        setRequiresDemoToken(config.requiresDemoToken);
       })
       .catch((err) => {
         console.error("[Dashboard] Failed to fetch demo config:", err);
@@ -96,6 +97,7 @@ function Dashboard() {
     const socket = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
       auth: {
+        kind: "ui",
         token: token?.trim(),
         tenantId: TENANT_ID
       }
@@ -382,7 +384,9 @@ function Dashboard() {
     try {
       // If demo mode is ON, clear demo data; otherwise clear real traces
       const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
-      const headers = demoModeEnabled ? demoHeaders() : authHeaders();
+      const headers = demoModeEnabled
+        ? demoHeaders(requiresDemoToken)
+        : authHeaders();
 
       await fetch(`${API_BASE}${endpoint}`, {
         method: "DELETE",
@@ -578,6 +582,7 @@ function Dashboard() {
           setShowDemoPage(false);
         }}
         onNavigateBack={() => setShowDemoPage(false)}
+        requiresDemoToken={requiresDemoToken}
       />
     );
   }
@@ -606,6 +611,7 @@ function Dashboard() {
                     // Demo events come from /api/demo-seed POST, not from toggle
                   }}
                   disabled={!connected}
+                  requiresDemoToken={requiresDemoToken}
                 />
               )}
               <div className="flex items-center gap-2">

@@ -1,5 +1,3 @@
-// dashboard-web/server/__tests__/auth.test.ts
-
 /**
  * Authentication and Tenant Isolation Tests
  *
@@ -542,6 +540,66 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
       expect(res.body.ok).toBe(true);
     });
 
+    it("should return 401 when demo token is only provided via Authorization in strict mode with tenants configured", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer demo-secret");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
+    });
+
+    it("should accept demo token from Authorization bearer in strict mode when tenants are not configured", async () => {
+      setTestEnv({
+        TENANTS_JSON: "",
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer demo-secret")
+        .send({ apps: ["demo-app"] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it("should return 401 when demo token is only provided via X-Demo-Token in strict mode with no tenants configured", async () => {
+      setTestEnv({
+        TENANTS_JSON: "",
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("X-Demo-Token", "demo-secret");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
+    });
+
     it("should not require demo token in dev mode", async () => {
       setTestEnv({
         TENANTS_JSON: JSON.stringify({
@@ -656,6 +714,42 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
+    });
+
+    it("should accept demo token from Authorization bearer in strict mode when tenants are not configured", async () => {
+      setTestEnv({
+        TENANTS_JSON: "",
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .delete("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer demo-secret");
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it("should return 401 when demo token is only provided via X-Demo-Token in strict mode with no tenants configured", async () => {
+      setTestEnv({
+        TENANTS_JSON: "",
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .delete("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("X-Demo-Token", "demo-secret");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
     });
   });
 });
@@ -1602,4 +1696,26 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       expect(event.tenantId).toBe("tenant-a");
     });
   });
+});
+
+it("should succeed when tenants configured even if Authorization contains viewer token and X-Demo-Token is valid", async () => {
+  setTestEnv({
+    TENANTS_JSON: JSON.stringify({
+      "tenant-a": { apps: {}, dashboards: { "viewer-a": true } }
+    }),
+    AUTH_MODE: "strict",
+    DEMO_MODE_ENABLED: "true",
+    DEMO_MODE_TOKEN: "demo-secret"
+  });
+  await setupServer();
+
+  const res = await request(app)
+    .post("/api/demo-seed")
+    .set("X-Tenant-Id", "tenant-a")
+    .set("Authorization", "Bearer viewer-a") // viewer
+    .set("X-Demo-Token", "demo-secret") // demo
+    .send({ apps: ["demo-app"] });
+
+  expect(res.status).toBe(200);
+  expect(res.body.ok).toBe(true);
 });

@@ -1,7 +1,6 @@
-//  packages/dashboard-web/src/pages/DemoPage.tsx 
 import { useState } from "react";
 import { API_BASE, TENANT_ID } from "../lib/config";
-import { demoHeaders } from "../lib/api";
+import { authHeaders, demoHeaders } from "../lib/api";
 import { getDemoAppNames } from "../lib/demoMode";
 import type { Event } from "../lib/types";
 
@@ -12,9 +11,14 @@ type Props = {
     traceOpenMap: Record<string, boolean>
   ) => void;
   onNavigateBack: () => void;
+  requiresDemoToken: boolean;
 };
 
-export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
+export function DemoPage({
+  onDemoComplete,
+  onNavigateBack,
+  requiresDemoToken
+}: Props) {
   const [loading, setLoading] = useState(false);
 
   const runDemo = async () => {
@@ -27,7 +31,10 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
       // Seed demo traces (server will clear existing demo data for this tenant)
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
         method: "POST",
-        headers: { ...demoHeaders(), "Content-Type": "application/json" },
+        headers: {
+          ...demoHeaders(requiresDemoToken),
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({
           apps: demoApps
         })
@@ -40,7 +47,7 @@ export function DemoPage({ onDemoComplete, onNavigateBack }: Props) {
 
       // Fetch all traces (includes both demo and real)
       const eventsRes = await fetch(`${API_BASE}/api/traces`, {
-        headers: demoHeaders()
+        headers: authHeaders()
       });
       const data: Event[] = await eventsRes.json();
       const ordered = [...data].sort((a, b) => a.ts - b.ts);
