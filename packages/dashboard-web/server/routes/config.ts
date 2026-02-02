@@ -3,7 +3,10 @@ import { getAuthConfig } from "../tenants";
 
 /**
  * Public config endpoint - exposes demo mode availability to frontend
- * No auth required as this only reveals feature availability
+ *
+ * IMPORTANT: This is the ONLY /api/* endpoint that does not require authentication.
+ * It must be registered BEFORE app.use("/api", requireApiKey) in server/index.ts.
+ * No auth required as this only reveals feature availability (no sensitive data).
  */
 export function registerConfigRoutes(app: Express) {
   app.get("/api/config", (req, res) => {

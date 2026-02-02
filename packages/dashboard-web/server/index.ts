@@ -34,10 +34,12 @@ async function main() {
   );
   app.use(express.json());
 
-  // Config endpoint (no auth required)
+  // Config endpoint (no auth required) - MUST be registered BEFORE requireApiKey
+  // This is the ONLY /api/* endpoint that is intentionally public
   registerConfigRoutes(app);
 
-  // Protected API routes
+  // Protected API routes - ALL /api/* routes registered after this point are protected
+  // This middleware enforces tenant-scoped authentication for all /api endpoints
   app.use("/api", requireApiKey);
 
   const httpServer = createServer(app);

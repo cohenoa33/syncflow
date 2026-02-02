@@ -39,7 +39,11 @@ function clearServerModuleCache() {
   const path = require("path");
   const serverDir = path.resolve(__dirname, "..");
   Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(serverDir) && !key.includes("models") && !key.includes("node_modules")) {
+    if (
+      key.startsWith(serverDir) &&
+      !key.includes("models") &&
+      !key.includes("node_modules")
+    ) {
       delete require.cache[key];
     }
   });
@@ -70,22 +74,28 @@ function setTestEnv(config: {
 
 async function setupServer() {
   clearServerModuleCache();
-  
+
   const { requireApiKey } = await import("../auth");
   const { registerDemoRoutes } = await import("../routes/demo");
   const { registerTracesRoutes } = await import("../routes/traces");
+  const { registerInsightsRoutes } = await import("../routes/insights");
+  const { registerConfigRoutes } = await import("../routes/config");
   const { attachSocketServer } = await import("../socket");
   const { eventsBuffer, connectedAgents } = await import("../state");
-  const { __TEST_resetTenantsConfig, __TEST_resetAuthConfig } = await import("../tenants");
-  
+  const { __TEST_resetTenantsConfig, __TEST_resetAuthConfig } =
+    await import("../tenants");
+
   __TEST_resetTenantsConfig();
   __TEST_resetAuthConfig();
-  
+
   eventsBuffer.length = 0;
   connectedAgents.clear();
-  
+
   app = express();
   app.use(express.json());
+
+  // Config endpoint must be registered BEFORE requireApiKey (intentionally public)
+  registerConfigRoutes(app);
 
   app.use("/api", requireApiKey);
 
@@ -94,6 +104,7 @@ async function setupServer() {
 
   registerDemoRoutes(app, io);
   registerTracesRoutes(app, io);
+  registerInsightsRoutes(app);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, () => {
@@ -110,7 +121,7 @@ async function teardownServer() {
       io.close(() => resolve());
     });
   }
-  
+
   if (httpServer) {
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
@@ -155,31 +166,46 @@ describe("AUTH CANARY — must never weaken", () => {
 
     await setupServer();
 
-    // 1) Missing tenant header
-    const res1 = await request(app).get("/api/traces");
-    expect(res1.status).toBe(400);
+    // Test BOTH /api/traces AND /api/insights to ensure middleware protects all routes
+    const endpoints = ["/api/traces", "/api/insights/trace-123"];
 
-    // 2) Unknown tenant
-    const res2 = await request(app)
-      .get("/api/traces")
-      .set("X-Tenant-Id", "unknown-tenant")
-      .set("Authorization", "Bearer viewer-a");
-    expect(res2.status).toBe(401);
+    for (const endpoint of endpoints) {
+      // 1) Missing tenant header
+      const res1 = await request(app).get(endpoint);
+      expect(res1.status).toBe(400);
+      expect(res1.body.error).toBe("BAD_REQUEST");
 
-    // 3) Missing Authorization
-    const res3 = await request(app)
-      .get("/api/traces")
-      .set("X-Tenant-Id", "tenant-a");
-    expect(res3.status).toBe(401);
+      // 2) Unknown tenant
+      const res2 = await request(app)
+        .get(endpoint)
+        .set("X-Tenant-Id", "unknown-tenant")
+        .set("Authorization", "Bearer viewer-a");
+      expect(res2.status).toBe(401);
+      expect(res2.body.error).toBe("UNAUTHORIZED");
 
-    // 4) Invalid viewer token
-    const res4 = await request(app)
-      .get("/api/traces")
-      .set("X-Tenant-Id", "tenant-a")
-      .set("Authorization", "Bearer invalid");
-    expect(res4.status).toBe(401);
+      // 3) Missing Authorization
+      const res3 = await request(app)
+        .get(endpoint)
+        .set("X-Tenant-Id", "tenant-a");
+      expect(res3.status).toBe(401);
+      expect(res3.body.error).toBe("UNAUTHORIZED");
 
-    // 5) Control: valid tenant + valid token MUST succeed
+      // 4) Invalid viewer token
+      const res4 = await request(app)
+        .get(endpoint)
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer invalid");
+      expect(res4.status).toBe(401);
+      expect(res4.body.error).toBe("UNAUTHORIZED");
+    }
+
+    // Ensure middleware protects ALL /api/* paths (even non-existent routes)
+    // If middleware is missing or registered incorrectly, this would return 404
+    const resUnknown = await request(app).get("/api/__canary__");
+    expect(resUnknown.status).toBe(400);
+    expect(resUnknown.body.error).toBe("BAD_REQUEST");
+
+    // 5) Control: valid tenant + valid token MUST succeed for /api/traces
     const res5 = await request(app)
       .get("/api/traces")
       .set("X-Tenant-Id", "tenant-a")
@@ -192,6 +218,37 @@ describe("AUTH CANARY — must never weaken", () => {
 // ============================================================================
 
 describe("HTTP AUTH - requireApiKey middleware", () => {
+  describe("GET /api/config", () => {
+    it("should be the ONLY public /api endpoint and return only safe fields", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      // Call /api/config with NO authentication headers
+      const res = await request(app).get("/api/config");
+
+      // Must return 200 (public endpoint)
+      expect(res.status).toBe(200);
+
+      // Must return ONLY these safe fields (no sensitive data)
+      const keys = Object.keys(res.body).sort();
+      expect(keys).toEqual(["demoModeEnabled", "requiresDemoToken"]);
+
+      // Both values must be booleans
+      expect(typeof res.body.demoModeEnabled).toBe("boolean");
+      expect(typeof res.body.requiresDemoToken).toBe("boolean");
+    });
+  });
+
   describe("GET /api/traces", () => {
     it("should return 400 when X-Tenant-Id is missing", async () => {
       setTestEnv({ TENANTS_JSON: "", AUTH_MODE: "dev" });
@@ -298,6 +355,62 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe("GET /api/insights/:traceId", () => {
+    it("should return 400 when X-Tenant-Id is missing", async () => {
+      setTestEnv({ TENANTS_JSON: "", AUTH_MODE: "dev" });
+      await setupServer();
+
+      const res = await request(app).get("/api/insights/trace-123");
+      // No X-Tenant-Id header
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("BAD_REQUEST");
+    });
+
+    it("should return 401 when TENANTS_JSON present and Authorization header missing", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: { "app-a": "token-a" },
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .get("/api/insights/trace-123")
+        .set("X-Tenant-Id", "tenant-a");
+      // No Authorization header
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
+    });
+
+    it("should pass auth and return either 200 or 404 when valid credentials provided", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .get("/api/insights/trace-123")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer viewer-a");
+
+      // Auth passed - should not be 400 (missing tenant) or 401 (unauthorized)
+      // Can be 200 (found) or 404 (trace not found)
+      expect([200, 404]).toContain(res.status);
     });
   });
 });
@@ -898,17 +1011,17 @@ describe("SOCKET AUTH - register (agent)", () => {
 
       agent.on("connect", async () => {
         agent.emit("register", { appName: "app-a", token: "token-a" });
-        
+
         // Give agent time to register
         await new Promise((r) => setTimeout(r, 100));
-        
+
         const { connectedAgents } = await import("../state");
         try {
           expect(connectedAgents.size).toBe(1);
           const agentData = Array.from(connectedAgents.values())[0];
           expect(agentData.appName).toBe("app-a");
           expect(agentData.tenantId).toBe("tenant-a");
-          
+
           agent.disconnect();
           resolve();
         } catch (err) {
