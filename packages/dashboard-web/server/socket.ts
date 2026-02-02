@@ -1,3 +1,5 @@
+// dashboard-web/server/socket.ts
+
 import { Server } from "socket.io";
 import type { Server as HttpServer } from "http";
 import { EventModel } from "./models";
@@ -18,14 +20,135 @@ export function attachSocketServer(httpServer: HttpServer) {
 
   const authedSockets = new Set<string>();
 
+  // Socket.IO middleware: Enforce UI auth at connection/handshake time
+  // UI clients MUST connect with kind="ui", agents with kind="agent" (or omit kind)
+  io.use((socket, next) => {
+    const { hasTenantsConfig, requireViewerAuth } = getAuthConfig();
+
+    // Extract kind marker from handshake.auth or handshake.query
+    const kind =
+      (typeof socket.handshake.auth?.kind === "string"
+        ? socket.handshake.auth.kind.trim()
+        : "") ||
+      (typeof socket.handshake.query?.kind === "string"
+        ? socket.handshake.query.kind.trim()
+        : "");
+
+    // If kind is not "ui", this is an agent - will authenticate via register event
+    if (kind !== "ui") {
+      // Agent socket - allow through, will auth later via register
+      return next();
+    }
+
+    // This is a UI client - enforce UI auth rules
+    console.log("[Dashboard] UI handshake auth", socket.id);
+
+    // Extract tenantId from handshake.auth or handshake.query
+    const tenantId =
+      (typeof socket.handshake.auth?.tenantId === "string"
+        ? socket.handshake.auth.tenantId.trim()
+        : "") ||
+      (typeof socket.handshake.query?.tenantId === "string"
+        ? socket.handshake.query.tenantId.trim()
+        : "");
+
+    // UI clients ALWAYS require tenantId
+    if (!tenantId) {
+      console.warn(
+        "[Dashboard] ❌ Handshake: UI client missing tenantId",
+        socket.id
+      );
+      const err = new Error("MISSING_TENANT_ID");
+      (err as any).data = { error: "MISSING_TENANT_ID" };
+      return next(err);
+    }
+
+    // Extract viewer token from handshake.auth or handshake.query
+    const token =
+      (typeof socket.handshake.auth?.token === "string"
+        ? socket.handshake.auth.token.trim()
+        : "") ||
+      (typeof socket.handshake.query?.token === "string"
+        ? socket.handshake.query.token.trim()
+        : "");
+
+    // If viewer auth is enabled (TENANTS_JSON present)
+    if (requireViewerAuth) {
+      // Tenant must exist in TENANTS
+      if (!TENANTS[tenantId]) {
+        console.warn(
+          `[Dashboard] ❌ Handshake: Tenant "${tenantId}" not found in TENANTS_JSON`
+        );
+        const err = new Error("UNAUTHORIZED");
+        (err as any).data = {
+          error: "UNAUTHORIZED",
+          message: "Unknown tenant"
+        };
+        return next(err);
+      }
+
+      // Token must be present
+      if (!token) {
+        console.warn(
+          `[Dashboard] ❌ Handshake: Missing viewer token (tenant: ${tenantId})`
+        );
+        const err = new Error("UNAUTHORIZED");
+        (err as any).data = {
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid viewer token"
+        };
+        return next(err);
+      }
+
+      // Token must be valid for this tenant
+      if (!validateDashboardViewerToken(tenantId, token)) {
+        console.warn(
+          `[Dashboard] ❌ Handshake: Invalid viewer token (tenant: ${tenantId})`
+        );
+        const err = new Error("UNAUTHORIZED");
+        (err as any).data = {
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid viewer token"
+        };
+        return next(err);
+      }
+
+      console.log(
+        `[Dashboard] ✅ Handshake success: Valid token for tenant "${tenantId}"`
+      );
+    } else {
+      // Viewer auth disabled (TENANTS_JSON empty) - allow with just tenantId
+      console.log(
+        `[Dashboard] ⚠️  No viewer auth required, allowing tenant "${tenantId}" through`
+      );
+    }
+
+    // Set tenantId and uiAuthenticated on successful UI handshake auth
+    socket.data.tenantId = tenantId;
+    socket.data.uiAuthenticated = true;
+
+    // Join tenant room immediately so UI can receive tenant-scoped events
+    socket.join(`tenant:${tenantId}`);
+
+    // Allow connection
+    next();
+  });
+
   io.on("connection", (socket) => {
-    socket.data.registered = false;
-    socket.data.appName = undefined as string | undefined;
-    socket.data.tenantId = undefined as string | undefined;
+    // Don't wipe handshake auth state - preserve tenantId and uiAuthenticated if set
+    if (!socket.data.tenantId) {
+      socket.data.tenantId = undefined as string | undefined;
+    }
+    if (!socket.data.uiAuthenticated) {
+      socket.data.registered = false;
+      socket.data.appName = undefined as string | undefined;
+    }
     console.log(
       "[Dashboard] Client connected:",
       socket.id,
-      "- awaiting register with token validation..."
+      socket.data.uiAuthenticated
+        ? `(UI pre-authenticated for tenant: ${socket.data.tenantId})`
+        : "- awaiting register or join_tenant..."
     );
 
     socket.on("register", (data) => {
@@ -99,8 +222,23 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.data.appName = appName;
       const tenantId = socket.data.tenantId as string;
 
+      // Leave any existing tenant rooms to ensure single-tenant membership
+      const rooms = Array.from(socket.rooms);
+      rooms.forEach((room) => {
+        if (room.startsWith("tenant:") && room !== `tenant:${tenantId}`) {
+          socket.leave(room);
+        }
+      });
+
       // Join tenant room
       socket.join(`tenant:${tenantId}`);
+
+      // Add to connected agents tracker BEFORE emitting agents list
+      connectedAgents.set(socket.id, {
+        appName,
+        socketId: socket.id,
+        tenantId
+      });
 
       // Emit agents list to tenant room only
       io.to(`tenant:${tenantId}`).emit(
@@ -109,13 +247,6 @@ export function attachSocketServer(httpServer: HttpServer) {
           (a) => a.tenantId === tenantId
         )
       );
-
-      // Add to connected agents tracker
-      connectedAgents.set(socket.id, {
-        appName,
-        socketId: socket.id,
-        tenantId
-      });
 
       console.log(
         "[Dashboard] Agent registered:",
@@ -204,6 +335,24 @@ export function attachSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("join_tenant", (data) => {
+      // If client already authenticated during handshake, this is idempotent
+      if (socket.data.uiAuthenticated && socket.data.tenantId) {
+        console.log(
+          "[Dashboard] join_tenant called for pre-authenticated client:",
+          socket.data.tenantId,
+          socket.id
+        );
+        // Emit agents list (client already in room)
+        socket.emit(
+          "agents",
+          Array.from(connectedAgents.values()).filter(
+            (a) => a.tenantId === socket.data.tenantId
+          )
+        );
+        return;
+      }
+
+      // Legacy path: client connected without handshake auth (old clients without kind="ui")
       const { hasTenantsConfig, requireViewerAuth } = getAuthConfig();
 
       // Step A: tenantId is ALWAYS required
@@ -217,12 +366,36 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
+      // Prevent tenant switching - if tenantId already set, ensure it matches
+      if (socket.data.tenantId && socket.data.tenantId !== tenantId) {
+        console.warn(
+          `[Dashboard] ❌ join_tenant: Attempt to switch tenant from "${socket.data.tenantId}" to "${tenantId}"`,
+          socket.id
+        );
+        socket.emit("auth_error", {
+          ok: false,
+          error: "UNAUTHORIZED",
+          message: "Cannot switch tenants"
+        });
+        socket.disconnect(true);
+        return;
+      }
+
       // Step B: If requireViewerAuth === false (TENANTS_JSON empty)
       // Allow join without token, emit agents payload
       if (!requireViewerAuth) {
         console.log(
           `[Dashboard] ⚠️  No viewer auth required, allowing tenant "${tenantId}" through`
         );
+
+        // Leave any existing tenant rooms to ensure single-tenant membership
+        const rooms = Array.from(socket.rooms);
+        rooms.forEach((room) => {
+          if (room.startsWith("tenant:") && room !== `tenant:${tenantId}`) {
+            socket.leave(room);
+          }
+        });
+
         socket.data.tenantId = tenantId;
         socket.join(`tenant:${tenantId}`);
 
@@ -293,6 +466,15 @@ export function attachSocketServer(httpServer: HttpServer) {
       console.log(
         `[Dashboard] ✅ join_tenant success: Valid token for tenant "${tenantId}"`
       );
+
+      // Leave any existing tenant rooms to ensure single-tenant membership
+      const rooms = Array.from(socket.rooms);
+      rooms.forEach((room) => {
+        if (room.startsWith("tenant:") && room !== `tenant:${tenantId}`) {
+          socket.leave(room);
+        }
+      });
+
       socket.data.tenantId = tenantId;
       socket.join(`tenant:${tenantId}`);
 
@@ -304,10 +486,6 @@ export function attachSocketServer(httpServer: HttpServer) {
       );
 
       console.log("[Dashboard] UI joined tenant room:", tenantId, socket.id);
-    });
-
-    socket.on("connect_error", (err) => {
-      console.log("[Socket] connect_error", socket.id, err?.message);
     });
   });
 

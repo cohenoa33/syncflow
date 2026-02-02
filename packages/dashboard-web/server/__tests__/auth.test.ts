@@ -1,3 +1,5 @@
+// dashboard-web/server/__tests__/auth.test.ts
+
 /**
  * Authentication and Tenant Isolation Tests
  *
@@ -659,7 +661,253 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
 });
 
 // ============================================================================
-// 3) SOCKET AUTH — join_tenant
+// 3) SOCKET AUTH — UI Handshake (Connection Time)
+// ============================================================================
+
+describe("SOCKET AUTH - UI Handshake", () => {
+  let client: ClientSocket;
+
+  afterEach(() => {
+    if (client?.connected) {
+      client.disconnect();
+    }
+  });
+
+  it("should reject missing tenantId at handshake when kind=ui", async () => {
+    setTestEnv({
+      TENANTS_JSON: "",
+      AUTH_MODE: "dev"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      // Connect as UI client (kind=ui) but no tenantId - should be rejected
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui" }
+      });
+
+      client.on("connect_error", (err) => {
+        expect(err.message).toBe("MISSING_TENANT_ID");
+        expect((err as any).data?.error).toBe("MISSING_TENANT_ID");
+        resolve();
+      });
+
+      client.on("connect", () => {
+        reject(new Error("Should not connect without tenantId"));
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for connect_error")),
+        2000
+      );
+    });
+  });
+
+  it("should reject missing token at handshake when TENANTS_JSON is present", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": {
+          apps: {},
+          dashboards: { "viewer-a": true }
+        }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      // Connect with kind=ui and tenantId but no token - should be rejected at handshake
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui", tenantId: "tenant-a" }
+      });
+
+      client.on("connect_error", (err) => {
+        expect(err.message).toBe("UNAUTHORIZED");
+        expect((err as any).data?.error).toBe("UNAUTHORIZED");
+        resolve();
+      });
+
+      client.on("connect", () => {
+        reject(
+          new Error(
+            "Should not connect without token when TENANTS_JSON present"
+          )
+        );
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for connect_error")),
+        2000
+      );
+    });
+  });
+
+  it("should allow dev mode connection with tenantId and no token, and receive agents", async () => {
+    setTestEnv({
+      TENANTS_JSON: "",
+      AUTH_MODE: "dev"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      // Connect with kind=ui and tenantId but no token - should succeed in dev mode
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui", tenantId: "any-tenant" }
+      });
+
+      let connected = false;
+
+      client.on("connect", () => {
+        connected = true;
+        // Client should be authenticated and in tenant room already
+        // Emit join_tenant to get agents
+        client.emit("join_tenant", { tenantId: "any-tenant" });
+      });
+
+      client.on("agents", (agents) => {
+        if (!connected) {
+          reject(new Error("Received agents before connect event"));
+          return;
+        }
+        // Successfully received agents list after connecting in dev mode
+        expect(Array.isArray(agents)).toBe(true);
+        resolve();
+      });
+
+      client.on("connect_error", (err) => {
+        reject(
+          new Error(
+            `Should not receive connect_error in dev mode: ${err.message}`
+          )
+        );
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for agents event")),
+        2000
+      );
+    });
+  });
+
+  it("should allow connection with valid tenant and token at handshake", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": {
+          apps: {},
+          dashboards: { "viewer-a": true }
+        }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      // Connect with kind=ui, valid tenantId and token in auth
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui", tenantId: "tenant-a", token: "viewer-a" }
+      });
+
+      let connected = false;
+
+      client.on("connect", () => {
+        connected = true;
+        // Client should be authenticated at this point
+        // Emit join_tenant to get agents
+        client.emit("join_tenant", { tenantId: "tenant-a", token: "viewer-a" });
+      });
+
+      client.on("agents", (agents) => {
+        if (!connected) {
+          reject(new Error("Received agents before connect event"));
+          return;
+        }
+        // Successfully received agents after handshake auth
+        expect(Array.isArray(agents)).toBe(true);
+        resolve();
+      });
+
+      client.on("connect_error", (err) => {
+        reject(new Error(`Should not receive connect_error: ${err.message}`));
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for agents event")),
+        2000
+      );
+    });
+  });
+
+  it("should reject unknown tenant at handshake", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": {
+          apps: {},
+          dashboards: { "viewer-a": true }
+        }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui", tenantId: "unknown-tenant", token: "viewer-a" }
+      });
+
+      client.on("connect_error", (err) => {
+        expect(err.message).toBe("UNAUTHORIZED");
+        expect((err as any).data?.error).toBe("UNAUTHORIZED");
+        resolve();
+      });
+
+      client.on("connect", () => {
+        reject(new Error("Should not connect with unknown tenant"));
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for connect_error")),
+        2000
+      );
+    });
+  });
+
+  it("should reject invalid token at handshake", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": {
+          apps: {},
+          dashboards: { "viewer-a": true }
+        }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      client = ioClient(`http://localhost:${serverPort}`, {
+        auth: { kind: "ui", tenantId: "tenant-a", token: "invalid-token" }
+      });
+
+      client.on("connect_error", (err) => {
+        expect(err.message).toBe("UNAUTHORIZED");
+        expect((err as any).data?.error).toBe("UNAUTHORIZED");
+        resolve();
+      });
+
+      client.on("connect", () => {
+        reject(new Error("Should not connect with invalid token"));
+      });
+
+      setTimeout(
+        () => reject(new Error("Timeout waiting for connect_error")),
+        2000
+      );
+    });
+  });
+});
+
+// ============================================================================
+// 4) SOCKET AUTH — join_tenant
 // ============================================================================
 
 describe("SOCKET AUTH - join_tenant", () => {
