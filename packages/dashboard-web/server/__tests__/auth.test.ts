@@ -702,7 +702,37 @@ describe("SOCKET AUTH - join_tenant", () => {
     });
   });
 
-  it("should emit auth_error when TENANTS_JSON is empty", async () => {
+  it("should allow join when TENANTS_JSON is empty and tenantId is provided (no token required)", async () => {
+    setTestEnv({ TENANTS_JSON: "", AUTH_MODE: "dev" });
+    await setupServer();
+
+    return new Promise<void>((resolve, reject) => {
+      client = ioClient(`http://localhost:${serverPort}`);
+
+      client.on("agents", (agents) => {
+        // Successfully joined without token - should receive agents list
+        expect(Array.isArray(agents)).toBe(true);
+        resolve();
+      });
+
+      client.on("auth_error", () => {
+        reject(
+          new Error("Should not receive auth_error when TENANTS_JSON is empty")
+        );
+      });
+
+      client.on("connect", () => {
+        client.emit("join_tenant", {
+          tenantId: "any-tenant"
+          // No token required when TENANTS_JSON is empty
+        });
+      });
+
+      setTimeout(() => reject(new Error("Timeout waiting for agents")), 2000);
+    });
+  });
+
+  it("should still require tenantId even when TENANTS_JSON is empty", async () => {
     setTestEnv({ TENANTS_JSON: "", AUTH_MODE: "dev" });
     await setupServer();
 
@@ -710,15 +740,16 @@ describe("SOCKET AUTH - join_tenant", () => {
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
-        expect(data.error).toBe("TENANTS_NOT_CONFIGURED");
+        expect(data.error).toBe("MISSING_TENANT_ID");
         resolve();
       });
 
+      client.on("agents", () => {
+        reject(new Error("Should not receive agents without tenantId"));
+      });
+
       client.on("connect", () => {
-        client.emit("join_tenant", {
-          tenantId: "any-tenant",
-          token: "any-token"
-        });
+        client.emit("join_tenant", {}); // Missing tenantId
       });
 
       setTimeout(

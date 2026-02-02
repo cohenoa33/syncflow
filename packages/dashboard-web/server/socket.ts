@@ -204,9 +204,9 @@ export function attachSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("join_tenant", (data) => {
-      const { hasTenantsConfig } = getAuthConfig();
+      const { hasTenantsConfig, requireViewerAuth } = getAuthConfig();
 
-      // Step 1: Always require tenantId in payload (trim)
+      // Step A: tenantId is ALWAYS required
       const tenantId =
         typeof data?.tenantId === "string" ? data.tenantId.trim() : "";
 
@@ -217,18 +217,31 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      if (!hasTenantsConfig) {
-        socket.emit("auth_error", {
-          ok: false,
-          error: "TENANTS_NOT_CONFIGURED",
-          message:
-            "TENANTS_JSON is not configured; no tenant data is available."
-        });
-        return; // do NOT join room
+      // Step B: If requireViewerAuth === false (TENANTS_JSON empty)
+      // Allow join without token, emit agents payload
+      if (!requireViewerAuth) {
+        console.log(
+          `[Dashboard] ⚠️  No viewer auth required, allowing tenant "${tenantId}" through`
+        );
+        socket.data.tenantId = tenantId;
+        socket.join(`tenant:${tenantId}`);
+
+        // Emit agents payload (empty list or existing agents for this tenant)
+        socket.emit(
+          "agents",
+          Array.from(connectedAgents.values()).filter(
+            (a) => a.tenantId === tenantId
+          )
+        );
+
+        console.log("[Dashboard] UI joined tenant room:", tenantId, socket.id);
+        return;
       }
 
-      // Step 3: If TENANTS_JSON has tenants, enforce strict validation
-      // 3a: Tenant must exist in TENANTS
+      // Step C: If requireViewerAuth === true (TENANTS_JSON present)
+      // Require viewer token validation
+
+      // C1: Tenant must exist in TENANTS
       if (!TENANTS[tenantId]) {
         console.warn(
           `[Dashboard] ❌ join_tenant: Tenant "${tenantId}" not found in TENANTS_JSON`
@@ -242,7 +255,7 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      // 3b: Require viewer token from data.token OR socket.handshake.auth.token
+      // C2: Require viewer token from data.token OR socket.handshake.auth.token
       const token =
         (typeof data?.token === "string" ? data.token.trim() : "") ||
         (typeof socket.handshake.auth?.token === "string"
@@ -262,7 +275,7 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      // 3c: Validate token against dashboards config for this tenant
+      // C3: Validate token against dashboards config for this tenant
       if (!validateDashboardViewerToken(tenantId, token)) {
         console.warn(
           `[Dashboard] ❌ join_tenant: Invalid viewer token (tenant: ${tenantId})`
