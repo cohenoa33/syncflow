@@ -22,10 +22,16 @@ export function DemoPage({
   hasTenantsConfig
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<{
+    status: number;
+    error?: string;
+    message?: string;
+  } | null>(null);
 
   const runDemo = async () => {
     try {
       setLoading(true);
+      setError(null);
 
       // Use tenant-scoped demo app names
       const demoApps = getDemoAppNames(TENANT_ID);
@@ -42,16 +48,47 @@ export function DemoPage({
         })
       });
       const json: {
-        ok: boolean;
-        count: number;
+        ok?: boolean;
+        count?: number;
         traceIdsByApp?: Record<string, string[]>;
-      } = await res.json();
+        error?: string;
+        message?: string;
+      } = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError({
+          status: res.status,
+          error: json?.error,
+          message: json?.message ?? "Failed to seed demo data"
+        });
+        return;
+      }
+
+      if (!json?.ok) {
+        setError({
+          status: res.status,
+          error: json?.error,
+          message: json?.message ?? "Failed to seed demo data"
+        });
+        return;
+      }
 
       // Fetch all traces (includes both demo and real)
       const eventsRes = await fetch(`${API_BASE}/api/traces`, {
         headers: authHeaders()
       });
-      const data: Event[] = await eventsRes.json();
+      const eventsJson = await eventsRes.json().catch(() => ({}));
+
+      if (!eventsRes.ok) {
+        setError({
+          status: eventsRes.status,
+          error: (eventsJson as any)?.error,
+          message: (eventsJson as any)?.message ?? "Failed to load traces"
+        });
+        return;
+      }
+
+      const data: Event[] = Array.isArray(eventsJson) ? eventsJson : [];
       const ordered = [...data].sort((a, b) => a.ts - b.ts);
 
       const initialOpen: Record<string, boolean> = {};
@@ -84,7 +121,11 @@ export function DemoPage({
       onNavigateBack();
     } catch (err) {
       console.error("[Dashboard] load demo trace data failed", err);
-      alert("Load Demo Data failed. Check the dashboard server logs." + err);
+      setError({
+        status: 0,
+        message: "Load Demo Data failed. Check the dashboard server logs."
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -106,6 +147,17 @@ export function DemoPage({
         <p className="text-xs text-gray-500 text-center mt-2 mb-6">
           Demo apps: {getDemoAppNames(TENANT_ID).join(", ")}
         </p>
+        {error && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="font-semibold">
+              Request failed (HTTP {error.status || "0"})
+            </div>
+            <div className="text-xs text-rose-700 mt-1">
+              {error.error ? `${error.error}: ` : ""}
+              {error.message ?? "Request failed"}
+            </div>
+          </div>
+        )}
         <div className="space-y-4">
           <button
             onClick={runDemo}

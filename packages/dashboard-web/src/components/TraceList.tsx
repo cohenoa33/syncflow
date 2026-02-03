@@ -4,8 +4,12 @@ import { TraceCard } from "./traces/TraceCard";
 
 type Props = {
   loading: boolean;
+  error?: {
+    status: number;
+    error?: string;
+    message?: string;
+  } | null;
   filteredTraceGroups: TraceGroup[];
-  totalTraceGroupsCount: number;
   openMap: Record<string, boolean>;
   traceOpenMap: Record<string, boolean>;
   copiedId: string | null;
@@ -25,6 +29,7 @@ type Props = {
 
 export function TraceList({
   loading,
+  error,
   filteredTraceGroups,
   openMap,
   traceOpenMap,
@@ -40,8 +45,6 @@ export function TraceList({
   setInsightOpenMap,
   onRegenerateInsight
 }: Props) {
-
-
   const [, forceTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => forceTick((x) => x + 1), 1000);
@@ -101,12 +104,31 @@ export function TraceList({
         payloads
       </div>
 
+      {error && (
+        <div className="mx-4 mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div className="font-semibold">
+            Failed to load traces (HTTP {error.status || "0"})
+          </div>
+          <div className="text-xs text-rose-700 mt-1">
+            {error.error ? `${error.error}: ` : ""}
+            {error.message ?? "Request failed"}
+          </div>
+        </div>
+      )}
+
       {loading && filteredTraceGroups.length === 0 ? (
         <div className="p-6 space-y-3">
           <div className="h-10 bg-gray-100 rounded animate-pulse" />
           <div className="h-10 bg-gray-100 rounded animate-pulse" />
           <div className="h-10 bg-gray-100 rounded animate-pulse" />
           <div className="text-xs text-gray-400 pt-2">Loading history…</div>
+        </div>
+      ) : error && filteredTraceGroups.length === 0 ? (
+        <div className="p-8 text-center text-rose-700">
+          <p className="text-lg font-medium mb-2">Unable to load traces</p>
+          <p className="text-sm">
+            Check your dashboard credentials and tenant configuration.
+          </p>
         </div>
       ) : filteredTraceGroups.length === 0 ? (
         <div className="p-8 text-center text-gray-500">
@@ -126,19 +148,19 @@ export function TraceList({
 
             const insight =
               insightState.status === "ready" ? insightState.data : null;
-        const rlResetAt =
-          insightState.status === "error"
-            ? insightState.rateLimit?.resetAt
-            : undefined;
+            const rlResetAt =
+              insightState.status === "error"
+                ? insightState.rateLimit?.resetAt
+                : undefined;
 
-        const rateLimitedNow = rlResetAt != null && nowMs < rlResetAt;
-        const retryInSec =
-          rlResetAt != null
-            ? Math.max(0, Math.ceil((rlResetAt - nowMs) / 1000))
-            : undefined;
+            const rateLimitedNow = rlResetAt != null && nowMs < rlResetAt;
+            const retryInSec =
+              rlResetAt != null
+                ? Math.max(0, Math.ceil((rlResetAt - nowMs) / 1000))
+                : undefined;
 
-        const regenDisabled =
-          insightState.status === "loading" || rateLimitedNow;
+            const regenDisabled =
+              insightState.status === "loading" || rateLimitedNow;
             const meta =
               insightState.status === "ready" ? insightState.meta : undefined;
 
@@ -169,10 +191,9 @@ export function TraceList({
                 toggleInsight={toggleInsight}
                 setInsightOpenMap={setInsightOpenMap}
                 onRegenerateInsight={onRegenerateInsight}
-                nowMs={0}
+                nowMs={nowMs}
                 copiedId={copiedId}
               />
-            
             );
           })}
         </div>

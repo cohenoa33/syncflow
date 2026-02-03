@@ -35,6 +35,18 @@ function Dashboard() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [traceLoadError, setTraceLoadError] = useState<{
+    status: number;
+    error?: string;
+    message?: string;
+  } | null>(null);
+
+  const [actionError, setActionError] = useState<{
+    status: number;
+    error?: string;
+    message?: string;
+    context: "clearAll" | "demoToggle" | "other";
+  } | null>(null);
 
   const [query, setQuery] = useState("");
   const [showSlowOnly, setShowSlowOnly] = useState(false);
@@ -53,12 +65,17 @@ function Dashboard() {
   const [requiresDemoToken, setRequiresDemoToken] = useState(false);
   const [hasTenantsConfig, setHasTenantsConfig] = useState(false);
 
+  const actionTitle = useMemo(() => {
+    if (!actionError) return "";
+    if (actionError.context === "clearAll") return "Clear traces failed";
+    if (actionError.context === "demoToggle") return "Demo action failed";
+    return "Action failed";
+  }, [actionError]);
+
   // ----- Fetch demo config to determine toggle visibility -----
   useEffect(() => {
     fetchDemoConfig()
       .then((config) => {
-        // Show toggle based on server's demoModeEnabled flag
-        // (which already accounts for AUTH_MODE and DEMO_MODE_TOKEN)
         setShowDemoToggle(config.demoModeEnabled);
         setRequiresDemoToken(config.requiresDemoToken);
         setHasTenantsConfig(config.hasTenantsConfig);
@@ -71,15 +88,27 @@ function Dashboard() {
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
     let isMounted = true;
-    console.log("[Dashboard] API_BASE", API_BASE);
-    console.log("[Dashboard] SOCKET_URL", SOCKET_URL);
     (async () => {
       try {
         setLoadingHistory(true);
+        setTraceLoadError(null);
+
         const res = await fetch(`${API_BASE}/api/traces`, {
           headers: authHeaders()
         });
-        const data: Event[] = await res.json();
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setTraceLoadError({
+            status: res.status,
+            error: (json as any)?.error,
+            message: (json as any)?.message
+          });
+          return;
+        }
+
+        const data: Event[] = Array.isArray(json) ? json : [];
         const ordered = [...data].sort((a, b) => a.ts - b.ts);
 
         if (!isMounted) return;
@@ -90,12 +119,19 @@ function Dashboard() {
         setTraceOpenMap(traceOpen);
       } catch (err) {
         console.error("[Dashboard] failed to load traces", err);
+        if (isMounted) {
+          setTraceLoadError({
+            status: 0,
+            message: "Failed to load traces"
+          });
+        }
       } finally {
         if (isMounted) setLoadingHistory(false);
       }
     })();
 
     const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
+
     const socket = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
       auth: {
@@ -107,7 +143,7 @@ function Dashboard() {
 
     socket.on("connect", () => {
       setConnected(true);
-      // Join tenant room on connect
+
       const token = (
         import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined
       )?.trim();
@@ -117,6 +153,7 @@ function Dashboard() {
         token
       });
     });
+
     socket.on("disconnect", () => setConnected(false));
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
@@ -140,6 +177,7 @@ function Dashboard() {
     socket.on("auth_error", (e) => {
       console.error("[socket auth_error]", e);
     });
+
     return () => {
       isMounted = false;
       socket.close();
@@ -148,20 +186,13 @@ function Dashboard() {
 
   // ----- Demo mode filtering -----
   const displayedEvents = useMemo(() => {
-    if (!demoModeEnabled) {
-      // Show only real events (not demo)
-      return events.filter((e) => e.source !== "demo");
-    }
-    // Show only demo events
+    if (!demoModeEnabled) return events.filter((e) => e.source !== "demo");
     return events.filter((e) => e.source === "demo");
   }, [events, demoModeEnabled]);
 
   const displayedAgents = useMemo(() => {
-    if (!demoModeEnabled) {
-      return agents;
-    }
+    if (!demoModeEnabled) return agents;
     if (!TENANT_ID) return [];
-    // Show fake demo agents
     const demoApps = getDemoAppNames(TENANT_ID);
     return demoApps.map((appName) => ({
       appName,
@@ -195,7 +226,6 @@ function Dashboard() {
   }, [appOptions, allAppsSelected]);
 
   const toggleApp = (appName: string) => {
-    // "ALL" -> first unselect becomes "all except clicked"
     if (allAppsSelected) {
       const next = new Set(appOptions);
       next.delete(appName);
@@ -237,7 +267,6 @@ function Dashboard() {
     return out.filter((e) => e.type === filter);
   }, [displayedEvents, filter, allAppsSelected, selectedApps]);
 
-  // Calculate filter counts based on app-filtered events (before type filtering)
   const appFilteredEvents = useMemo(() => {
     let out = displayedEvents;
     if (!allAppsSelected) {
@@ -311,6 +340,7 @@ function Dashboard() {
         for (const e of g.events) next[e.id] = false;
       return { ...m, ...next };
     });
+
     setTraceOpenMap((m) => {
       const next: Record<string, boolean> = {};
       for (const g of filteredTraceGroups) next[g.traceId] = false;
@@ -330,8 +360,9 @@ function Dashboard() {
         tag === "input" ||
         tag === "textarea" ||
         (ev.target as HTMLElement)?.isContentEditable
-      )
+      ) {
         return;
+      }
 
       if (ev.key === "e" && !ev.shiftKey) {
         const latest = filteredEvents[filteredEvents.length - 1];
@@ -383,19 +414,31 @@ function Dashboard() {
 
   const clearAll = async () => {
     if (!confirm("Clear all traces?")) return;
+
     try {
-      // If demo mode is ON, clear demo data; otherwise clear real traces
+      setActionError(null);
+
       const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
       const headers = demoModeEnabled
         ? demoHeaders({ requiresDemoToken, hasTenantsConfig })
         : authHeaders();
 
-      await fetch(`${API_BASE}${endpoint}`, {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "DELETE",
         headers
       });
 
-      // Filter out the cleared events
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setActionError({
+          status: res.status,
+          error: (json as any)?.error,
+          message: (json as any)?.message ?? "Failed to clear traces",
+          context: "clearAll"
+        });
+        return;
+      }
+
       if (demoModeEnabled) {
         setEvents((prev) => prev.filter((e) => e.source !== "demo"));
       } else {
@@ -406,6 +449,11 @@ function Dashboard() {
       setTraceOpenMap({});
     } catch (err) {
       console.error("[Dashboard] clear traces failed", err);
+      setActionError({
+        status: 0,
+        message: "Request failed",
+        context: "clearAll"
+      });
     }
   };
 
@@ -459,19 +507,23 @@ function Dashboard() {
           __rateLimited: true,
           rateLimit: rl,
           resetInSec,
-          message: json?.message ?? "Too many insight requests. Try again soon."
+          statusCode: res.status,
+          message:
+            (json as any)?.message ??
+            "Too many insight requests. Try again soon."
         };
       }
 
-      if (!res.ok || !json?.ok) {
-        if (json?.error === "INSIGHT_SAMPLED_OUT") {
+      if (!res.ok || !(json as any)?.ok) {
+        if ((json as any)?.error === "INSIGHT_SAMPLED_OUT") {
           setInsightStateMap((m) => ({
             ...m,
             [traceId]: {
               status: "error",
               code: "INSIGHT_SAMPLED_OUT",
+              statusCode: res.status,
               error:
-                json?.message ??
+                (json as any)?.message ??
                 "AI Insights were skipped for this trace (sampling). Click Regenerate to force.",
               rateLimit: rl
             }
@@ -480,8 +532,9 @@ function Dashboard() {
         }
 
         throw {
-          message: json?.message ?? "Failed to load insight",
-          code: json?.error,
+          message: (json as any)?.message ?? "Failed to load insight",
+          code: (json as any)?.error,
+          statusCode: res.status,
           rateLimit: rl
         };
       }
@@ -490,8 +543,11 @@ function Dashboard() {
         ...m,
         [traceId]: {
           status: "ready",
-          data: json.insight,
-          meta: { cached: json.cached, computedAt: json.computedAt },
+          data: (json as any).insight,
+          meta: {
+            cached: (json as any).cached,
+            computedAt: (json as any).computedAt
+          },
           rateLimit: rl
         }
       }));
@@ -501,6 +557,7 @@ function Dashboard() {
         [traceId]: {
           status: "error",
           code: e?.code,
+          statusCode: e?.statusCode,
           error:
             e?.__rateLimited && e?.resetInSec != null
               ? `Rate limited. Try again in ${e.resetInSec}s.`
@@ -536,15 +593,18 @@ function Dashboard() {
           __rateLimited: true,
           rateLimit: rl,
           resetInSec,
+          statusCode: res.status,
           message:
-            json?.message ?? "Too many regenerate requests. Try again soon."
+            (json as any)?.message ??
+            "Too many regenerate requests. Try again soon."
         };
       }
 
-      if (!res.ok || !json?.ok || !json?.insight) {
+      if (!res.ok || !(json as any)?.ok || !(json as any)?.insight) {
         throw {
-          message: json?.message ?? "Failed to regenerate insight",
-          code: json?.error,
+          message: (json as any)?.message ?? "Failed to regenerate insight",
+          code: (json as any)?.error,
+          statusCode: res.status,
           rateLimit: rl
         };
       }
@@ -553,8 +613,11 @@ function Dashboard() {
         ...m,
         [traceId]: {
           status: "ready",
-          data: json.insight,
-          meta: { cached: json.cached, computedAt: json.computedAt },
+          data: (json as any).insight,
+          meta: {
+            cached: (json as any).cached,
+            computedAt: (json as any).computedAt
+          },
           rateLimit: rl
         }
       }));
@@ -564,6 +627,7 @@ function Dashboard() {
         [traceId]: {
           status: "error",
           code: e?.code,
+          statusCode: e?.statusCode,
           error:
             e?.__rateLimited && e?.resetInSec != null
               ? `Rate limited. Try again in ${e.resetInSec}s.`
@@ -592,7 +656,6 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex justify-between items-center">
@@ -609,15 +672,15 @@ function Dashboard() {
               {showDemoToggle && (
                 <DemoModeToggle
                   onToggle={async (enabled) => {
+                    setActionError(null);
                     setDemoModeEnabled(enabled);
-                    // Note: No need to refresh traces - client-side filtering handles it
-                    // Demo events come from /api/demo-seed POST, not from toggle
                   }}
                   disabled={!connected}
                   requiresDemoToken={requiresDemoToken}
                   hasTenantsConfig={hasTenantsConfig}
                 />
               )}
+
               <div className="flex items-center gap-2">
                 <div
                   className={`w-2 h-2 rounded-full ${
@@ -628,10 +691,13 @@ function Dashboard() {
                   {connected ? "Connected" : "Disconnected"}
                 </span>
               </div>
+
               <div className="text-sm text-gray-600">
                 {demoModeEnabled
                   ? "2 agents"
-                  : `${displayedAgents.length} agent${displayedAgents.length !== 1 ? "s" : ""}`}
+                  : `${displayedAgents.length} agent${
+                      displayedAgents.length !== 1 ? "s" : ""
+                    }`}
               </div>
             </div>
           </div>
@@ -667,10 +733,43 @@ function Dashboard() {
           totalCount={traceGroups.length}
         />
 
+        {actionError && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">
+                  {actionTitle} (HTTP {actionError.status || "0"})
+                </div>
+
+                <div className="text-xs text-rose-700 mt-1">
+                  {actionError.error ? `${actionError.error}: ` : ""}
+                  {actionError.message ?? "Request failed"}
+                </div>
+
+                {(actionError.status === 400 || actionError.status === 401) && (
+                  <div className="text-xs text-rose-700 mt-1">
+                    Check tenant id and dashboard key / demo token.
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                className="text-xs text-rose-700 hover:text-rose-900"
+                aria-label="Dismiss action error"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         <TraceList
           loading={loadingHistory}
+          error={traceLoadError}
           filteredTraceGroups={filteredTraceGroups}
-          totalTraceGroupsCount={traceGroups.length}
           openMap={openMap}
           traceOpenMap={traceOpenMap}
           copiedId={copiedId}

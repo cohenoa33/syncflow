@@ -48,8 +48,15 @@ export async function fetchDemoConfig(): Promise<{
   requiresDemoToken: boolean;
   hasTenantsConfig: boolean;
 }> {
+
+  const headers: Record<string, string> = {};
+if (TENANT_ID) headers["X-Tenant-Id"] = TENANT_ID;
+
   const res = await fetch(
-    `${import.meta.env.VITE_API_BASE || "http://localhost:5050"}/api/config`
+    `${import.meta.env.VITE_API_BASE || "http://localhost:5050"}/api/config`,
+    {
+      headers
+    }
   );
   return res.json();
 }

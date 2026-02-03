@@ -27,12 +27,12 @@ export function InsightPanel({
   freshnessLabel,
   insight
 }: Props) {
+  const isSampledOut =
+    insightState.status === "error" &&
+    insightState.code === "INSIGHT_SAMPLED_OUT";
 
-const isSampledOut =
-  insightState.status === "error" &&
-  insightState.code === "INSIGHT_SAMPLED_OUT";
-
-const showSampledOut = isSampledOut && !(rateLimitedNow && retryInSec != null);
+  const showSampledOut =
+    isSampledOut && !(rateLimitedNow && retryInSec != null);
   function fmtAgo(ms?: number) {
     if (!ms) return null;
     const diff = Math.max(0, nowMs - ms);
@@ -63,6 +63,16 @@ const showSampledOut = isSampledOut && !(rateLimitedNow && retryInSec != null);
             </div>
 
             <div className="text-xs text-gray-600 mt-1">
+              {insightState.statusCode != null && (
+                <span className="mr-2 text-gray-500">
+                  HTTP {insightState.statusCode}
+                </span>
+              )}
+              {insightState.code && (
+                <span className="mr-2 text-rose-700 font-mono">
+                  {insightState.code}
+                </span>
+              )}
               {rateLimitedNow && retryInSec != null ? (
                 <>
                   Rate limited. Try again in{" "}
