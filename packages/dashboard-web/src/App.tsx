@@ -51,6 +51,7 @@ function Dashboard() {
   const [demoModeEnabled, setDemoModeEnabled] = useState(getDemoMode());
   const [showDemoToggle, setShowDemoToggle] = useState(false);
   const [requiresDemoToken, setRequiresDemoToken] = useState(false);
+  const [hasTenantsConfig, setHasTenantsConfig] = useState(false);
 
   // ----- Fetch demo config to determine toggle visibility -----
   useEffect(() => {
@@ -60,6 +61,7 @@ function Dashboard() {
         // (which already accounts for AUTH_MODE and DEMO_MODE_TOKEN)
         setShowDemoToggle(config.demoModeEnabled);
         setRequiresDemoToken(config.requiresDemoToken);
+        setHasTenantsConfig(config.hasTenantsConfig);
       })
       .catch((err) => {
         console.error("[Dashboard] Failed to fetch demo config:", err);
@@ -385,7 +387,7 @@ function Dashboard() {
       // If demo mode is ON, clear demo data; otherwise clear real traces
       const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
       const headers = demoModeEnabled
-        ? demoHeaders(requiresDemoToken)
+        ? demoHeaders({ requiresDemoToken, hasTenantsConfig })
         : authHeaders();
 
       await fetch(`${API_BASE}${endpoint}`, {
@@ -583,6 +585,7 @@ function Dashboard() {
         }}
         onNavigateBack={() => setShowDemoPage(false)}
         requiresDemoToken={requiresDemoToken}
+        hasTenantsConfig={hasTenantsConfig}
       />
     );
   }
@@ -612,6 +615,7 @@ function Dashboard() {
                   }}
                   disabled={!connected}
                   requiresDemoToken={requiresDemoToken}
+                  hasTenantsConfig={hasTenantsConfig}
                 />
               )}
               <div className="flex items-center gap-2">

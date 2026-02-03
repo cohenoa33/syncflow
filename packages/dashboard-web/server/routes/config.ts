@@ -11,7 +11,7 @@ import { getAuthConfig } from "../tenants";
 export function registerConfigRoutes(app: Express) {
   app.get("/api/config", (req, res) => {
     const demoModeEnabled = process.env.DEMO_MODE_ENABLED === "true";
-    const { authMode } = getAuthConfig();
+    const { authMode, hasTenantsConfig } = getAuthConfig();
     const demoToken = (process.env.DEMO_MODE_TOKEN ?? "").trim();
 
     // Demo is effectively available only if:
@@ -23,7 +23,8 @@ export function registerConfigRoutes(app: Express) {
 
     res.json({
       demoModeEnabled: isDemoAvailable,
-      requiresDemoToken: authMode === "strict" && demoToken !== ""
+      requiresDemoToken: authMode === "strict" && demoToken !== "",
+      hasTenantsConfig
     });
   });
 }

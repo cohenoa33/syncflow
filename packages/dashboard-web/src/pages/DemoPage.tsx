@@ -12,12 +12,14 @@ type Props = {
   ) => void;
   onNavigateBack: () => void;
   requiresDemoToken: boolean;
+  hasTenantsConfig: boolean;
 };
 
 export function DemoPage({
   onDemoComplete,
   onNavigateBack,
-  requiresDemoToken
+  requiresDemoToken,
+  hasTenantsConfig
 }: Props) {
   const [loading, setLoading] = useState(false);
 
@@ -32,7 +34,7 @@ export function DemoPage({
       const res = await fetch(`${API_BASE}/api/demo-seed`, {
         method: "POST",
         headers: {
-          ...demoHeaders(requiresDemoToken),
+          ...demoHeaders({ requiresDemoToken, hasTenantsConfig }),
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

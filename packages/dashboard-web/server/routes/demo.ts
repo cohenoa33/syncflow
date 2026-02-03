@@ -4,13 +4,13 @@
  * Behavior:
  * - Dev mode (AUTH_MODE=dev): No demo token required
  * - Strict mode (AUTH_MODE=strict): Requires demo token
- *   - If TENANTS_JSON configured: X-Demo-Token: ${DEMO_MODE_TOKEN}
+ *   - If TENANTS_JSON configured: X-Demo-Token: ${DEMO_MODE_TOKEN} (Authorization remains viewer key)
  *   - If TENANTS_JSON empty: Authorization: Bearer ${DEMO_MODE_TOKEN}
  * - All operations are tenant-scoped (use req.tenantId from auth middleware)
  * - Demo events marked with source: "demo" (preserves real data)
- * - Demo apps named: demo-${tenantId}-app, demo-app-${tenantId}
  * - Socket broadcasts to tenant room only: tenant:${tenantId}
  */
+
 import type { Express, Request } from "express";
 import type { Server } from "socket.io";
 import { EventModel } from "../models";
@@ -196,7 +196,26 @@ export function registerDemoRoutes(app: Express, io: Server) {
       }
 
       const room = `tenant:${tenantId}`;
-      io.to(room).emit("eventHistory", []);
+
+      // Send the remaining (real + any non-demo) tenant history back to clients,
+      // so clearing demo data does not make the UI look empty.
+      const remaining = await EventModel.find({
+        tenantId,
+        source: { $ne: DEMO_SOURCE }
+      })
+        .sort({ ts: 1 })
+        .lean();
+
+      // (This does NOT change correctness of tenant isolation; it's just cleanup.)
+      for (let i = eventsBuffer.length - 1; i >= 0; i--) {
+        const ev: any = eventsBuffer[i];
+        if (ev?.tenantId === tenantId) {
+          eventsBuffer.splice(i, 1);
+        }
+      }
+      for (const ev of remaining) eventsBuffer.push(ev);
+      while (eventsBuffer.length > 1000) eventsBuffer.shift();
+      io.to(room).emit("eventHistory", remaining);
 
       console.log(`[Dashboard] Cleared demo traces (tenant=${tenantId})`);
 

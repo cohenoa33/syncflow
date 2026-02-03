@@ -7,12 +7,14 @@ type Props = {
   onToggle: (enabled: boolean) => void;
   disabled?: boolean;
   requiresDemoToken: boolean;
+  hasTenantsConfig: boolean;
 };
 
 export function DemoModeToggle({
   onToggle,
   disabled,
-  requiresDemoToken
+  requiresDemoToken,
+  hasTenantsConfig
 }: Props) {
   const [demoEnabled, setDemoEnabled] = useState(getDemoMode());
   const [loading, setLoading] = useState(false);
@@ -31,7 +33,7 @@ export function DemoModeToggle({
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "POST",
           headers: {
-            ...demoHeaders(requiresDemoToken),
+            ...demoHeaders({ requiresDemoToken, hasTenantsConfig }),
             "Content-Type": "application/json",
             "X-Demo-Request": "true"
           },
@@ -46,7 +48,7 @@ export function DemoModeToggle({
         // Turning OFF: clear demo data
         const res = await fetch(`${API_BASE}/api/demo-seed`, {
           method: "DELETE",
-          headers: demoHeaders(requiresDemoToken)
+          headers: demoHeaders({ requiresDemoToken, hasTenantsConfig })
         });
 
         if (!res.ok) {

@@ -241,11 +241,16 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
 
       // Must return ONLY these safe fields (no sensitive data)
       const keys = Object.keys(res.body).sort();
-      expect(keys).toEqual(["demoModeEnabled", "requiresDemoToken"]);
+      expect(keys).toEqual([
+        "demoModeEnabled",
+        "hasTenantsConfig",
+        "requiresDemoToken"
+      ]);
 
       // Both values must be booleans
       expect(typeof res.body.demoModeEnabled).toBe("boolean");
       expect(typeof res.body.requiresDemoToken).toBe("boolean");
+      expect(typeof res.body.hasTenantsConfig).toBe("boolean");
     });
   });
 
