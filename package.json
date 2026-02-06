@@ -9,17 +9,12 @@
     "dev:dashboard": "pnpm --filter dashboard-web dev",
     "dev:server": "pnpm --filter dashboard-web dev:server",
     "dev:example": "pnpm --filter mern-sample-app dev",
-
     "dev:all": "pnpm dev & pnpm dev:server",
-
     "build": "pnpm --filter \"./packages/**\" build",
     "build:agent": "pnpm --filter agent-node build",
     "build:dashboard": "pnpm --filter dashboard-web build",
-
     "typecheck": "pnpm -r exec tsc --noEmit",
-
     "clean": "rm -rf node_modules packages/**/node_modules examples/**/node_modules packages/**/dist examples/**/dist",
-
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\""
   },
   "keywords": [
