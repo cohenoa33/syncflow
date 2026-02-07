@@ -148,6 +148,7 @@ afterEach(async () => {
   await teardownServer();
   await EventModel.deleteMany({});
 });
+
 // ============================================================================
 // CANARY — AUTH MUST NEVER WEAKEN
 // ============================================================================
@@ -213,6 +214,7 @@ describe("AUTH CANARY — must never weaken", () => {
     expect(res5.status).toBe(200);
   });
 });
+
 // ============================================================================
 // 1) HTTP AUTH — requireApiKey middleware
 // ============================================================================
@@ -251,6 +253,67 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
       expect(typeof res.body.demoModeEnabled).toBe("boolean");
       expect(typeof res.body.requiresDemoToken).toBe("boolean");
       expect(typeof res.body.hasTenantsConfig).toBe("boolean");
+    });
+
+    it("should report demoModeEnabled=false in strict mode when DEMO_MODE_TOKEN is empty", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: ""
+      });
+      await setupServer();
+
+      const res = await request(app).get("/api/config");
+
+      expect(res.status).toBe(200);
+      expect(res.body.demoModeEnabled).toBe(false);
+      expect(res.body.requiresDemoToken).toBe(false);
+      expect(res.body.hasTenantsConfig).toBe(true);
+
+      const demoRes = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer viewer-a");
+
+      expect(demoRes.status).toBe(403);
+      expect(demoRes.body.error).toBe("DEMO_MODE_DISABLED");
+    });
+
+    it("should align config flags with strict-mode demo token requirements", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const configRes = await request(app).get("/api/config");
+
+      expect(configRes.status).toBe(200);
+      expect(configRes.body.demoModeEnabled).toBe(true);
+      expect(configRes.body.requiresDemoToken).toBe(true);
+      expect(configRes.body.hasTenantsConfig).toBe(true);
+
+      const demoRes = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer viewer-a");
+      // Missing X-Demo-Token should be rejected in strict mode
+
+      expect(demoRes.status).toBe(401);
+      expect(demoRes.body.error).toBe("UNAUTHORIZED");
     });
   });
 
@@ -448,30 +511,6 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
       expect(res.body.error).toBe("DEMO_MODE_DISABLED");
     });
 
-    it("should return 401 when X-Demo-Token is missing in strict mode", async () => {
-      setTestEnv({
-        TENANTS_JSON: JSON.stringify({
-          "tenant-a": {
-            apps: {},
-            dashboards: { "viewer-a": true }
-          }
-        }),
-        AUTH_MODE: "strict",
-        DEMO_MODE_ENABLED: "true",
-        DEMO_MODE_TOKEN: "demo-secret"
-      });
-      await setupServer();
-
-      const res = await request(app)
-        .post("/api/demo-seed")
-        .set("X-Tenant-Id", "tenant-a")
-        .set("Authorization", "Bearer viewer-a");
-      // Missing X-Demo-Token
-
-      expect(res.status).toBe(401);
-      expect(res.body.error).toBe("UNAUTHORIZED");
-    });
-
     it("should return 401 when X-Demo-Token is invalid in strict mode", async () => {
       setTestEnv({
         TENANTS_JSON: JSON.stringify({
@@ -515,6 +554,30 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
         .set("X-Tenant-Id", "tenant-a")
         .set("Authorization", "Bearer invalid-viewer")
         .set("X-Demo-Token", "demo-secret");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
+    });
+
+    it("should return 401 when X-Demo-Token is provided without viewer Authorization in strict mode", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .post("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("X-Demo-Token", "demo-secret");
+      // Missing viewer Authorization
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBe("UNAUTHORIZED");
@@ -576,6 +639,13 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
         DEMO_MODE_TOKEN: "demo-secret"
       });
       await setupServer();
+
+      const configRes = await request(app).get("/api/config");
+
+      expect(configRes.status).toBe(200);
+      expect(configRes.body.demoModeEnabled).toBe(true);
+      expect(configRes.body.requiresDemoToken).toBe(true);
+      expect(configRes.body.hasTenantsConfig).toBe(false);
 
       const res = await request(app)
         .post("/api/demo-seed")
@@ -697,6 +767,31 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
       expect(res.body.error).toBe("UNAUTHORIZED");
     });
 
+    // ✅ NEW: invalid demo token on DELETE
+    it("should return 401 when X-Demo-Token is invalid in strict mode", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .delete("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer viewer-a")
+        .set("X-Demo-Token", "wrong-token");
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
+    });
+
     it("should return 200 when both viewer auth and demo token are valid", async () => {
       setTestEnv({
         TENANTS_JSON: JSON.stringify({
@@ -719,6 +814,30 @@ describe("DEMO ROUTES AUTH - /api/demo-seed", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
+    });
+
+    it("should return 401 when X-Demo-Token is provided without viewer Authorization in strict mode", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: {},
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict",
+        DEMO_MODE_ENABLED: "true",
+        DEMO_MODE_TOKEN: "demo-secret"
+      });
+      await setupServer();
+
+      const res = await request(app)
+        .delete("/api/demo-seed")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("X-Demo-Token", "demo-secret");
+      // Missing viewer Authorization
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("UNAUTHORIZED");
     });
 
     it("should accept demo token from Authorization bearer in strict mode when tenants are not configured", async () => {
@@ -780,6 +899,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       // Connect as UI client (kind=ui) but no tenantId - should be rejected
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui" }
@@ -788,15 +914,15 @@ describe("SOCKET AUTH - UI Handshake", () => {
       client.on("connect_error", (err) => {
         expect(err.message).toBe("MISSING_TENANT_ID");
         expect((err as any).data?.error).toBe("MISSING_TENANT_ID");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
-        reject(new Error("Should not connect without tenantId"));
+        finish(new Error("Should not connect without tenantId"));
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for connect_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for connect_error")),
         2000
       );
     });
@@ -815,6 +941,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       // Connect with kind=ui and tenantId but no token - should be rejected at handshake
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui", tenantId: "tenant-a" }
@@ -823,19 +956,19 @@ describe("SOCKET AUTH - UI Handshake", () => {
       client.on("connect_error", (err) => {
         expect(err.message).toBe("UNAUTHORIZED");
         expect((err as any).data?.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
-        reject(
+        finish(
           new Error(
             "Should not connect without token when TENANTS_JSON present"
           )
         );
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for connect_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for connect_error")),
         2000
       );
     });
@@ -849,6 +982,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       // Connect with kind=ui and tenantId but no token - should succeed in dev mode
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui", tenantId: "any-tenant" }
@@ -858,31 +998,29 @@ describe("SOCKET AUTH - UI Handshake", () => {
 
       client.on("connect", () => {
         connected = true;
-        // Client should be authenticated and in tenant room already
         // Emit join_tenant to get agents
         client.emit("join_tenant", { tenantId: "any-tenant" });
       });
 
       client.on("agents", (agents) => {
         if (!connected) {
-          reject(new Error("Received agents before connect event"));
+          finish(new Error("Received agents before connect event"));
           return;
         }
-        // Successfully received agents list after connecting in dev mode
         expect(Array.isArray(agents)).toBe(true);
-        resolve();
+        finish();
       });
 
       client.on("connect_error", (err) => {
-        reject(
+        finish(
           new Error(
             `Should not receive connect_error in dev mode: ${err.message}`
           )
         );
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for agents event")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for agents event")),
         2000
       );
     });
@@ -901,7 +1039,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
-      // Connect with kind=ui, valid tenantId and token in auth
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui", tenantId: "tenant-a", token: "viewer-a" }
       });
@@ -910,27 +1054,24 @@ describe("SOCKET AUTH - UI Handshake", () => {
 
       client.on("connect", () => {
         connected = true;
-        // Client should be authenticated at this point
-        // Emit join_tenant to get agents
         client.emit("join_tenant", { tenantId: "tenant-a", token: "viewer-a" });
       });
 
       client.on("agents", (agents) => {
         if (!connected) {
-          reject(new Error("Received agents before connect event"));
+          finish(new Error("Received agents before connect event"));
           return;
         }
-        // Successfully received agents after handshake auth
         expect(Array.isArray(agents)).toBe(true);
-        resolve();
+        finish();
       });
 
       client.on("connect_error", (err) => {
-        reject(new Error(`Should not receive connect_error: ${err.message}`));
+        finish(new Error(`Should not receive connect_error: ${err.message}`));
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for agents event")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for agents event")),
         2000
       );
     });
@@ -949,6 +1090,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui", tenantId: "unknown-tenant", token: "viewer-a" }
       });
@@ -956,15 +1104,15 @@ describe("SOCKET AUTH - UI Handshake", () => {
       client.on("connect_error", (err) => {
         expect(err.message).toBe("UNAUTHORIZED");
         expect((err as any).data?.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
-        reject(new Error("Should not connect with unknown tenant"));
+        finish(new Error("Should not connect with unknown tenant"));
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for connect_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for connect_error")),
         2000
       );
     });
@@ -983,6 +1131,13 @@ describe("SOCKET AUTH - UI Handshake", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`, {
         auth: { kind: "ui", tenantId: "tenant-a", token: "invalid-token" }
       });
@@ -990,15 +1145,15 @@ describe("SOCKET AUTH - UI Handshake", () => {
       client.on("connect_error", (err) => {
         expect(err.message).toBe("UNAUTHORIZED");
         expect((err as any).data?.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
-        reject(new Error("Should not connect with invalid token"));
+        finish(new Error("Should not connect with invalid token"));
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for connect_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for connect_error")),
         2000
       );
     });
@@ -1031,19 +1186,26 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("MISSING_TENANT_ID");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("join_tenant", {}); // Missing tenantId
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1054,28 +1216,34 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("agents", (agents) => {
-        // Successfully joined without token - should receive agents list
         expect(Array.isArray(agents)).toBe(true);
-        resolve();
+        finish();
       });
 
       client.on("auth_error", () => {
-        reject(
+        finish(
           new Error("Should not receive auth_error when TENANTS_JSON is empty")
         );
       });
 
       client.on("connect", () => {
-        client.emit("join_tenant", {
-          tenantId: "any-tenant"
-          // No token required when TENANTS_JSON is empty
-        });
+        client.emit("join_tenant", { tenantId: "any-tenant" });
       });
 
-      setTimeout(() => reject(new Error("Timeout waiting for agents")), 2000);
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for agents")),
+        2000
+      );
     });
   });
 
@@ -1084,23 +1252,30 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("MISSING_TENANT_ID");
-        resolve();
+        finish();
       });
 
       client.on("agents", () => {
-        reject(new Error("Should not receive agents without tenantId"));
+        finish(new Error("Should not receive agents without tenantId"));
       });
 
       client.on("connect", () => {
         client.emit("join_tenant", {}); // Missing tenantId
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1119,11 +1294,18 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
@@ -1133,8 +1315,8 @@ describe("SOCKET AUTH - join_tenant", () => {
         });
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1153,19 +1335,26 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("join_tenant", { tenantId: "tenant-a" }); // No token
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1184,11 +1373,18 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
@@ -1198,8 +1394,8 @@ describe("SOCKET AUTH - join_tenant", () => {
         });
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1218,23 +1414,32 @@ describe("SOCKET AUTH - join_tenant", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("agents", (agents) => {
-        // If we receive agents list, we successfully joined the room
         expect(Array.isArray(agents)).toBe(true);
-        resolve();
+        finish();
       });
 
       client.on("auth_error", () => {
-        reject(new Error("Should not receive auth_error"));
+        finish(new Error("Should not receive auth_error"));
       });
 
       client.on("connect", () => {
         client.emit("join_tenant", { tenantId: "tenant-a", token: "viewer-a" });
       });
 
-      setTimeout(() => reject(new Error("Timeout waiting for agents")), 2000);
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for agents")),
+        2000
+      );
     });
   });
 });
@@ -1257,19 +1462,26 @@ describe("SOCKET AUTH - register (agent)", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("TENANTS_NOT_CONFIGURED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("register", { appName: "app-a", token: "token-a" });
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1288,19 +1500,26 @@ describe("SOCKET AUTH - register (agent)", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("MISSING_APP_NAME");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("register", { token: "token-a" }); // Missing appName
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1319,19 +1538,26 @@ describe("SOCKET AUTH - register (agent)", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("register", { appName: "unknown-app", token: "token-a" });
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1350,19 +1576,26 @@ describe("SOCKET AUTH - register (agent)", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       client = ioClient(`http://localhost:${serverPort}`);
 
       client.on("auth_error", (data) => {
         expect(data.error).toBe("UNAUTHORIZED");
-        resolve();
+        finish();
       });
 
       client.on("connect", () => {
         client.emit("register", { appName: "app-a", token: "wrong-token" });
       });
 
-      setTimeout(
-        () => reject(new Error("Timeout waiting for auth_error")),
+      timeout = setTimeout(
+        () => finish(new Error("Timeout waiting for auth_error")),
         2000
       );
     });
@@ -1381,10 +1614,17 @@ describe("SOCKET AUTH - register (agent)", () => {
     await setupServer();
 
     return new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve();
+      };
+
       const agent = ioClient(`http://localhost:${serverPort}`);
 
       agent.on("auth_error", () => {
-        reject(new Error("Agent should not receive auth_error"));
+        finish(new Error("Agent should not receive auth_error"));
       });
 
       agent.on("connect", async () => {
@@ -1401,16 +1641,16 @@ describe("SOCKET AUTH - register (agent)", () => {
           expect(agentData.tenantId).toBe("tenant-a");
 
           agent.disconnect();
-          resolve();
+          finish();
         } catch (err) {
           agent.disconnect();
-          reject(err);
+          finish(err as Error);
         }
       });
 
-      setTimeout(() => {
+      timeout = setTimeout(() => {
         agent.disconnect();
-        reject(new Error("Timeout waiting for agent registration"));
+        finish(new Error("Timeout waiting for agent registration"));
       }, 2000);
     });
   });
@@ -1424,7 +1664,7 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
   let clientA: ClientSocket;
   let clientB: ClientSocket;
   let agentA: ClientSocket;
-  let agentB: ClientSocket;
+  let agentB: ClientSocket | undefined;
 
   afterEach(() => {
     [clientA, clientB, agentA, agentB].forEach((c) => {
@@ -1513,6 +1753,14 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       let clientAReady = false;
       let clientBReady = false;
       let eventReceivedByB = false;
+      let timeout: NodeJS.Timeout;
+      let settleTimeout: NodeJS.Timeout | undefined;
+      const finish = (err?: Error) => {
+        if (timeout) clearTimeout(timeout);
+        if (settleTimeout) clearTimeout(settleTimeout);
+        if (err) reject(err);
+        else resolve();
+      };
 
       // Setup tenant A client
       clientA = ioClient(`http://localhost:${serverPort}`);
@@ -1544,7 +1792,7 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       clientB.on("event", (evt) => {
         if (evt.tenantId === "tenant-a") {
           eventReceivedByB = true;
-          reject(new Error("CRITICAL: Tenant B received tenant A's event!"));
+          finish(new Error("CRITICAL: Tenant B received tenant A's event!"));
         }
       });
 
@@ -1566,16 +1814,16 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
             });
 
             // Wait a bit to ensure event would have been received if isolation was broken
-            setTimeout(() => {
+            settleTimeout = setTimeout(() => {
               if (!eventReceivedByB) {
-                resolve(); // Test passed - no leakage
+                finish(); // Test passed - no leakage
               }
             }, 500);
           });
         }
       }
 
-      setTimeout(() => reject(new Error("Timeout")), 3000);
+      timeout = setTimeout(() => finish(new Error("Timeout")), 3000);
     });
   });
 
@@ -1701,26 +1949,4 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       expect(event.tenantId).toBe("tenant-a");
     });
   });
-});
-
-it("should succeed when tenants configured even if Authorization contains viewer token and X-Demo-Token is valid", async () => {
-  setTestEnv({
-    TENANTS_JSON: JSON.stringify({
-      "tenant-a": { apps: {}, dashboards: { "viewer-a": true } }
-    }),
-    AUTH_MODE: "strict",
-    DEMO_MODE_ENABLED: "true",
-    DEMO_MODE_TOKEN: "demo-secret"
-  });
-  await setupServer();
-
-  const res = await request(app)
-    .post("/api/demo-seed")
-    .set("X-Tenant-Id", "tenant-a")
-    .set("Authorization", "Bearer viewer-a") // viewer
-    .set("X-Demo-Token", "demo-secret") // demo
-    .send({ apps: ["demo-app"] });
-
-  expect(res.status).toBe(200);
-  expect(res.body.ok).toBe(true);
 });
