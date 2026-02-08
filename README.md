@@ -28,15 +28,31 @@ docker start syncflow-mongo
 
 ```bash
 pnpm install && pnpm build:agent
-cd packages/dashboard-web && pnpm dev
+cd packages/dashboard-web
+
+# Create .env.local with required tenant ID
+echo "VITE_TENANT_ID=my-tenant" > .env.local
+
+pnpm dev
 # UI: http://localhost:5173
 # API: http://localhost:5050
-```
+
+# NOTE: To see real traces from sample apps, you must configure TENANTS_JSON.
+# If TENANTS_JSON is not set, agent connections are rejected by the dashboard.
+# Use Demo Mode instead if you don’t want to configure tenants.
+``` 
+
+
 
 **Terminal 3: Start Sample App**
 
 ```bash
-cd examples/mern-sample-app && pnpm dev
+cd examples/mern-sample-app
+
+# Set required tenant ID for agent
+export SYNCFLOW_TENANT_ID=my-tenant
+
+pnpm dev
 # Server: http://localhost:4000
 ```
 
@@ -45,13 +61,19 @@ cd examples/mern-sample-app && pnpm dev
 ```bash
 curl -X POST http://localhost:4000/api/users \
   -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: my-tenant" \
   -d '{"name":"User","email":"user@test.com"}'
 ```
 
 **Terminal 4: Start Sample App-2 (optional)**
 
 ```bash
-cd examples/mern-sample-app-2 && pnpm dev
+cd examples/mern-sample-app-2
+
+# Set required tenant ID for agent
+export SYNCFLOW_TENANT_ID=my-tenant
+
+pnpm dev
 # Server: http://localhost:4001
 ```
 
@@ -60,6 +82,7 @@ cd examples/mern-sample-app-2 && pnpm dev
 ```bash
 curl -X POST http://localhost:4001/api/users \
   -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: my-tenant" \
   -d '{"name":"User","email":"user+-app-2@test.com"}'
 ```
 
@@ -87,17 +110,17 @@ syncflow/
 
 Create `packages/dashboard-web/.env.local`:
 
-| Variable                 | Required | Default                                        | Notes                                 |
-| ------------------------ | -------- | ---------------------------------------------- | ------------------------------------- |
-| `MONGODB_URI`            | No       | `mongodb://localhost:27017/syncflow-dashboard` | —                                     |
-| `PORT`                   | No       | `5050`                                         | Dashboard server                      |
-| `OPENAI_API_KEY`         | No       | —                                              | Required for AI Insights              |
-| `ENABLE_AI_INSIGHTS`     | No       | `true`                                         | Disable to use heuristic analysis     |
-| `INSIGHT_MODEL`          | No       | `gpt-5.2`                                      | OpenAI model to use                   |
-| `DASHBOARD_API_KEY`      | No       | —                                              | Optional API key for server endpoints |
-| `VITE_API_BASE`          | No       | `http://localhost:5050`                        | Frontend API endpoint                 |
-| `VITE_SOCKET_URL`        | No       | `http://localhost:5050`                        | Frontend WebSocket endpoint           |
-| `VITE_DASHBOARD_API_KEY` | No       | —                                              | Optional auth key exposed to frontend |
+| Variable                 | Required | Default                                        | Notes                                       |
+| ------------------------ | -------- | ---------------------------------------------- | ------------------------------------------- |
+| `VITE_TENANT_ID`         | **Yes**  | —                                              | **REQUIRED**: Tenant ID for UI (no default) |
+| `MONGODB_URI`            | No       | `mongodb://localhost:27017/syncflow-dashboard` | —                                           |
+| `PORT`                   | No       | `5050`                                         | Dashboard server                            |
+| `OPENAI_API_KEY`         | No       | —                                              | Required for AI Insights                    |
+| `ENABLE_AI_INSIGHTS`     | No       | `true`                                         | Disable to use heuristic analysis           |
+| `INSIGHT_MODEL`          | No       | `gpt-4o-mini`                                  | OpenAI model to use                         |
+| `VITE_API_BASE`          | No       | `http://localhost:5050`                        | Frontend API endpoint                       |
+| `VITE_SOCKET_URL`        | No       | `http://localhost:5050`                        | Frontend WebSocket endpoint                 |
+| `VITE_DASHBOARD_API_KEY` | No       | —                                              | Viewer token for Authorization header (required when TENANTS_JSON is configured)       |
 
 See [.env.example](./packages/dashboard-web/.env.example) for all variables (AI rate limiting, sampling, multi-tenant config, etc.).
 
@@ -106,9 +129,112 @@ See [.env.example](./packages/dashboard-web/.env.example) for all variables (AI 
 - `SYNCFLOW_APP_NAME` — App identifier
 - `SYNCFLOW_DASHBOARD_SOCKET_URL` — Points to dashboard server
 - `SYNCFLOW_AGENT_KEY` — Agent authentication with dashboard
-- `SYNCFLOW_TENANT_ID` — Optional, defaults to `local`
+- `SYNCFLOW_TENANT_ID` — Tenant identifier for agent events.
+  Note: agents can only register when `TENANTS_JSON` is configured on the dashboard.
 
-⚠️ **Never commit `.env` files.** Keep `OPENAI_API_KEY` and `DASHBOARD_API_KEY` private.
+⚠️ **Never commit secrets.** Keep `OPENAI_API_KEY`, viewer tokens, and demo tokens private. `.env.example` is safe to commit; keep `.env.local` private.
+
+Auth details and examples are below.
+
+---
+
+## 🔐 Auth & Demo Mode (test-aligned)
+
+### Environment variables (auth/demo)
+
+- TENANTS_JSON: Non-empty enables tenant-aware viewer auth. If empty or absent, viewer auth is disabled and /api/traces returns [].
+- `AUTH_MODE`: `dev` or `strict`.
+- `DEMO_MODE_ENABLED`
+- `DEMO_MODE_TOKEN`
+
+### Public config endpoint
+
+`GET /api/config` is public (no auth) and returns only: `demoModeEnabled`, `requiresDemoToken`, `hasTenantsConfig`.
+
+`demoModeEnabled` is true only when:
+
+- `DEMO_MODE_ENABLED=true`, and
+- (`AUTH_MODE=dev`) OR (`AUTH_MODE=strict` AND `DEMO_MODE_TOKEN` is non-empty)
+
+### Header requirements (HTTP + Socket.IO)
+
+- All `/api/*` routes require `X-Tenant-Id` (including demo routes).
+- Viewer routes: `/api/traces`, `/api/insights/*`
+  - If `TENANTS_JSON` is configured: require `Authorization: Bearer <viewer-token>`.
+  - If `TENANTS_JSON` is empty/absent and `AUTH_MODE=dev`: no `Authorization` required.
+- Socket.IO (UI):
+  - Handshake auth payload: `{ kind: "ui", tenantId, token? }`
+  - `tenantId` is always required
+  - `token` is required when `TENANTS_JSON` is configured
+  - `join_tenant` remains allowed in dev mode with empty `TENANTS_JSON`
+
+### Demo routes (`/api/demo-seed`)
+
+- If `DEMO_MODE_ENABLED=false`: demo routes return 403 (`DEMO_MODE_DISABLED`).
+- Strict mode:
+  - If `DEMO_MODE_TOKEN` is empty:
+    - `/api/config` reports `demoModeEnabled=false`, `requiresDemoToken=false`
+    - demo routes behave as disabled (403)
+  - If `DEMO_MODE_TOKEN` is set:
+    - If `TENANTS_JSON` is configured:
+      - Require BOTH:
+        - `Authorization: Bearer <viewer-token>`
+        - `X-Demo-Token: <demo-token>`
+      - Reject demo token in `Authorization`
+      - Reject `X-Demo-Token` without viewer `Authorization`
+      - Invalid `X-Demo-Token` → 401
+      - Invalid viewer token → 401 even if demo token is valid
+    - If `TENANTS_JSON` is NOT configured:
+      - Require demo token ONLY via `Authorization: Bearer <demo-token>`
+      - Reject `X-Demo-Token` usage (401)
+- Dev mode: demo routes do not require a demo token (but still require `X-Tenant-Id`).
+
+### Auth matrix (compact)
+
+- **dev + TENANTS_JSON empty** → `X-Tenant-Id` → `/api/traces` returns `[]`, demo ok without demo token.
+- **dev + TENANTS_JSON configured** → `X-Tenant-Id` + `Authorization: Bearer <viewer-token>` → viewer routes ok; demo routes require viewer auth only.
+- **strict + TENANTS_JSON configured** → `X-Tenant-Id` + `Authorization: Bearer <viewer-token>` → viewer routes ok; demo routes also require `X-Demo-Token`.
+- **strict + TENANTS_JSON empty** → `X-Tenant-Id` → `/api/traces` returns `[]`; demo routes require `Authorization: Bearer <demo-token>` if demo is enabled.
+
+### Minimal examples
+
+Viewer routes:
+
+```bash
+# strict + TENANTS_JSON configured
+curl http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: tenant-a" \
+  -H "Authorization: Bearer viewer-token"
+
+# dev + TENANTS_JSON empty
+curl http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: any-tenant"
+```
+
+Demo routes:
+
+```bash
+# strict + TENANTS_JSON configured (requires BOTH viewer + demo)
+curl -X POST http://localhost:5050/api/demo-seed \
+  -H "X-Tenant-Id: tenant-a" \
+  -H "Authorization: Bearer viewer-token" \
+  -H "X-Demo-Token: demo-token"
+
+# strict + TENANTS_JSON empty (demo token ONLY in Authorization)
+curl -X POST http://localhost:5050/api/demo-seed \
+  -H "X-Tenant-Id: any-tenant" \
+  -H "Authorization: Bearer demo-token"
+```
+
+Socket.IO auth payloads:
+
+```ts
+// dev + TENANTS_JSON empty
+{ kind: "ui", tenantId: "tenant-a" }
+
+// strict + TENANTS_JSON configured
+{ kind: "ui", tenantId: "tenant-a", token: "viewer-token" }
+```
 
 ---
 
@@ -179,17 +305,17 @@ Dashboard UI (React + Tailwind)
 
 ## 🐛 Troubleshooting
 
-| Issue                                         | Solution                                                                                                                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **MongoDB connection error**                  | Ensure `mongod` or Docker container is running on port 27017. Check `MONGODB_URI` env var.                                                                                         |
-| **Dashboard UI blank / doesn't load**         | Is Vite server running on 5173? Check browser console for CORS errors.                                                                                                             |
-| **Traces not appearing**                      | Verify sample app is sending events: check `/api/traces` endpoint (`curl http://localhost:5050/api/traces -H "Authorization: Bearer <DASHBOARD_API_KEY>" -H "X-Tenant-Id: DEFAULT_TENANT_ID"`). 
-|                                               | Check agent `SYNCFLOW_DASHBOARD_SOCKET_URL` matches dashboard server. |
-| **"Cannot find module @syncflow/agent-node"** | Run `pnpm build:agent` first to compile the package.                                                                                                                               |
-| **Port already in use**                       | Change `PORT` (dashboard) or ports in `package.json` scripts. Example: `PORT=5051 pnpm dev:server`.                                                                                |
-| **AI Insights disabled / not generating**     | Set `OPENAI_API_KEY` and `ENABLE_AI_INSIGHTS=true`. Check dashboard logs for API errors. Heuristic insights (no API) always work.                                                  |
-| **Rate-limit error on insights**              | Wait for countdown or increase `AI_RATE_LIMIT_MAX` / `AI_RATE_LIMIT_WINDOW_MS`.                                                                                                    |
-| **CORS errors from UI**                       | Ensure `VITE_API_BASE` and `VITE_SOCKET_URL` match your dashboard server URL. In production, set them to empty (`""`) to use same-origin.                                          |
+| Issue                                         | Solution                                                                                                                                                                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MongoDB connection error**                  | Ensure `mongod` or Docker container is running on port 27017. Check `MONGODB_URI` env var.                                                                                                                              |
+| **Dashboard UI blank / doesn't load**         | Is Vite server running on 5173? Check browser console for CORS errors.                                                                                                                                                  |
+| **Traces not appearing**                      | Verify sample app is sending events: check `/api/traces` endpoint (`curl http://localhost:5050/api/traces -H "X-Tenant-Id: my-tenant"` and add `Authorization: Bearer <viewer-token>` if `TENANTS_JSON` is configured). |
+|                                               | Check agent `SYNCFLOW_DASHBOARD_SOCKET_URL` matches dashboard server.                                                                                                                                                   |
+| **"Cannot find module @syncflow/agent-node"** | Run `pnpm build:agent` first to compile the package.                                                                                                                                                                    |
+| **Port already in use**                       | Change `PORT` (dashboard) or ports in `package.json` scripts. Example: `PORT=5051 pnpm dev:server`.                                                                                                                     |
+| **AI Insights disabled / not generating**     | Set `OPENAI_API_KEY` and `ENABLE_AI_INSIGHTS=true`. Check dashboard logs for API errors. Heuristic insights (no API) always work.                                                                                       |
+| **Rate-limit error on insights**              | Wait for countdown or increase `AI_RATE_LIMIT_MAX` / `AI_RATE_LIMIT_WINDOW_MS`.                                                                                                                                         |
+| **CORS errors from UI**                       | Ensure `VITE_API_BASE` and `VITE_SOCKET_URL` match your dashboard server URL. In production, set them to empty (`""`) to use same-origin.                                                                               |
 
 ---
 
