@@ -26,11 +26,13 @@ type TenantsConfig = Record<
 export function parseTenantsConfig(): TenantsConfig {
   const raw = process.env.TENANTS_JSON ?? "";
 
-  console.log("[Dashboard] Parsing TENANTS_JSON... ", raw);
-
+  
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
+    console.log("[Dashboard] Parsing TENANTS_JSON status: ", parsed && typeof parsed === "object" ? "success" : "invalid format", );
+    console.log("[Dashboard] tenants:  ", parsed  );
+
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     console.warn("[Dashboard] Failed to parse TENANTS_JSON");
@@ -114,6 +116,13 @@ export function __TEST_resetAuthConfig() {
  */
 
 export function getAuthConfig(): AuthConfig {
+
+  console.log(
+    "[Dashboard] Evaluating auth configuration...",
+    Object.keys(TENANTS).length > 0
+      ? `TENANTS_JSON has ${Object.keys(TENANTS).length} tenant(s)`
+      : "TENANTS_JSON is empty"
+  );
   if (!_authConfig) {
     const hasTenantsConfig = Object.keys(TENANTS).length > 0;
     const authMode =
