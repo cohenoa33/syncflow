@@ -26,7 +26,8 @@ type TenantsConfig = Record<
 export function parseTenantsConfig(): TenantsConfig {
   const raw = process.env.TENANTS_JSON ?? "";
 
-  
+    console.log("[Dashboard] raw TENANTS_JSON:  ", raw);
+
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
