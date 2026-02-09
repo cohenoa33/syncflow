@@ -20,7 +20,9 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   const tenantFromHeader = getTenantFromHeaders(req.headers);
 
   if (!tenantFromHeader) {
+
     console.log(`[Dashboard] ❌ Auth failed: Missing X-Tenant-Id header`);
+    console.log("[Dashboard] Headers:", req.headers);
     return res.status(400).json({
       ok: false,
       error: "BAD_REQUEST",
