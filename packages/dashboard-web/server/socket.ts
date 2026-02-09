@@ -23,7 +23,7 @@ export function attachSocketServer(httpServer: HttpServer) {
   // Socket.IO middleware: Enforce UI auth at connection/handshake time
   // UI clients MUST connect with kind="ui", agents with kind="agent" (or omit kind)
   io.use((socket, next) => {
-    const { hasTenantsConfig, requireViewerAuth } = getAuthConfig();
+    const { requireViewerAuth } = getAuthConfig();
 
     // Extract kind marker from handshake.auth or handshake.query
     const kind =
