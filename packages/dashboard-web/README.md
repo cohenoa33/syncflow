@@ -102,14 +102,43 @@ All env vars go in `.env.local` (dev) or are set at runtime (prod). See [`.env.e
 - `VITE_API_BASE` — Default: same-origin (empty uses current origin)
 - `VITE_SOCKET_URL` — Default: same-origin
 
-**API Authentication** (optional):
+**Viewer Authentication** (when `TENANTS_JSON` is configured):
 
-- `DASHBOARD_API_KEY`, `VITE_DASHBOARD_API_KEY` — Protect `/api/` endpoints and browser requests
+- `VITE_DASHBOARD_API_KEY` — Viewer token sent as `Authorization: Bearer <viewer-token>`
 
-**Multi-Tenant** (optional):
+**Multi-Tenant Configuration** (REQUIRED):
 
-- `DEFAULT_TENANT_ID`, `VITE_TENANT_ID` — Default: `local`
-- `TENANTS_JSON` — JSON config for multiple tenants
+⚠️ **Tenant ID is now REQUIRED everywhere** - no default fallbacks
+
+See [Multi-Tenant Setup](#multi-tenant-setup) below for detailed examples.
+
+- `AUTH_MODE` — `strict` (production) or `dev` (default, local dev only)
+- `TENANTS_JSON` — JSON config for all tenants and their apps
+- `VITE_TENANT_ID` — Dashboard UI tenant (REQUIRED - must be explicitly set)
+
+**Important**:
+
+- All HTTP API requests MUST include `X-Tenant-Id` header
+- All Socket.IO connections MUST provide explicit `tenantId`
+- Instrumented apps MUST set `SYNCFLOW_TENANT_ID` environment variable
+- UI will fail to start if `VITE_TENANT_ID` is not set
+
+
+**Real data vs Demo Mode**: If `TENANTS_JSON` is not configured, the dashboard UI will start but real traces from agents will not appear.
+In this mode:
+- Viewer routes return empty results.-
+- Agent connections are not accepted.
+- Demo Mode is the intended way to explore the UI.
+
+
+To see real traces from instrumented apps, configure `TENANTS_JSON` and matching agent credentials.
+
+
+**Demo Mode** (optional):
+
+- `DEMO_MODE_ENABLED` — Enable/disable demo mode toggle (default: `false`)
+- `DEMO_MODE_TOKEN` — Server-only demo token (strict mode: required to enable demo; placement depends on `TENANTS_JSON`)
+- `VITE_DEMO_MODE_TOKEN` — Frontend demo token (must match `DEMO_MODE_TOKEN` in strict mode)
 
 **AI Insights** (optional):
 
@@ -125,6 +154,106 @@ All env vars go in `.env.local` (dev) or are set at runtime (prod). See [`.env.e
 - `AI_RATE_LIMIT_MAX`, `AI_RATE_LIMIT_WINDOW_MS` — Defaults: `20`, `60000`
 
 ⚠️ Never commit `.env.local` or API keys.
+
+---
+
+## 🔐 Auth & Demo Mode (test-aligned)
+
+### Environment variables (auth/demo)
+
+- `TENANTS_JSON`: Non-empty enables tenant-aware viewer auth. Empty/absent means no viewer token required; `/api/traces` returns `[]`.
+- `AUTH_MODE`: `dev` or `strict`.
+- `DEMO_MODE_ENABLED`
+- `DEMO_MODE_TOKEN`
+
+### Public config endpoint
+
+`GET /api/config` is public (no auth) and returns only: `demoModeEnabled`, `requiresDemoToken`, `hasTenantsConfig`.
+
+`demoModeEnabled` is true only when:
+
+- `DEMO_MODE_ENABLED=true`, and
+- (`AUTH_MODE=dev`) OR (`AUTH_MODE=strict` AND `DEMO_MODE_TOKEN` is non-empty)
+
+### Header requirements (HTTP + Socket.IO)
+
+- All `/api/*` routes require `X-Tenant-Id` (including demo routes).
+- Viewer routes: `/api/traces`, `/api/insights/*`
+  - If `TENANTS_JSON` is configured: require `Authorization: Bearer <viewer-token>`.
+  - If `TENANTS_JSON` is empty/absent and `AUTH_MODE=dev`: no `Authorization` required.
+- Socket.IO (UI):
+  - Handshake auth payload: `{ kind: "ui", tenantId, token? }`
+  - `tenantId` is always required
+  - `token` is required when `TENANTS_JSON` is configured
+  - `join_tenant` remains allowed in dev mode with empty `TENANTS_JSON`
+
+### Demo routes (`/api/demo-seed`)
+
+- If `DEMO_MODE_ENABLED=false`: demo routes return 403 (`DEMO_MODE_DISABLED`).
+- Strict mode:
+  - If `DEMO_MODE_TOKEN` is empty:
+    - `/api/config` reports `demoModeEnabled=false`, `requiresDemoToken=false`
+    - demo routes behave as disabled (403)
+  - If `DEMO_MODE_TOKEN` is set:
+    - If `TENANTS_JSON` is configured:
+      - Require BOTH:
+        - `Authorization: Bearer <viewer-token>`
+        - `X-Demo-Token: <demo-token>`
+      - Reject demo token in `Authorization`
+      - Reject `X-Demo-Token` without viewer `Authorization`
+      - Invalid `X-Demo-Token` → 401
+      - Invalid viewer token → 401 even if demo token is valid
+    - If `TENANTS_JSON` is NOT configured:
+      - Require demo token ONLY via `Authorization: Bearer <demo-token>`
+      - Reject `X-Demo-Token` usage (401)
+- Dev mode: demo routes do not require a demo token (but still require `X-Tenant-Id`).
+
+### Auth matrix (compact)
+
+- **dev + TENANTS_JSON empty** → `X-Tenant-Id` → `/api/traces` returns `[]`, demo ok without demo token.
+- **dev + TENANTS_JSON configured** → `X-Tenant-Id` + `Authorization: Bearer <viewer-token>` → viewer routes ok; demo routes require viewer auth only.
+- **strict + TENANTS_JSON configured** → `X-Tenant-Id` + `Authorization: Bearer <viewer-token>` → viewer routes ok; demo routes also require `X-Demo-Token`.
+- **strict + TENANTS_JSON empty** → `X-Tenant-Id` → `/api/traces` returns `[]`; demo routes require `Authorization: Bearer <demo-token>` if demo is enabled.
+
+### Minimal examples
+
+Viewer routes:
+
+```bash
+# strict + TENANTS_JSON configured
+curl http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: tenant-a" \
+  -H "Authorization: Bearer viewer-token"
+
+# dev + TENANTS_JSON empty
+curl http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: any-tenant"
+```
+
+Demo routes:
+
+```bash
+# strict + TENANTS_JSON configured (requires BOTH viewer + demo)
+curl -X POST http://localhost:5050/api/demo-seed \
+  -H "X-Tenant-Id: tenant-a" \
+  -H "Authorization: Bearer viewer-token" \
+  -H "X-Demo-Token: demo-token"
+
+# strict + TENANTS_JSON empty (demo token ONLY in Authorization)
+curl -X POST http://localhost:5050/api/demo-seed \
+  -H "X-Tenant-Id: any-tenant" \
+  -H "Authorization: Bearer demo-token"
+```
+
+Socket.IO auth payloads:
+
+```ts
+// dev + TENANTS_JSON empty
+{ kind: "ui", tenantId: "tenant-a" }
+
+// strict + TENANTS_JSON configured
+{ kind: "ui", tenantId: "tenant-a", token: "viewer-token" }
+```
 
 ---
 
@@ -194,6 +323,22 @@ pnpm start
 
 ### REST Endpoints
 
+#### **Config**
+
+```http
+GET /api/config
+```
+
+Public (no auth). Returns only:
+
+```json
+{
+  "demoModeEnabled": true,
+  "requiresDemoToken": true,
+  "hasTenantsConfig": true
+}
+```
+
 #### **Traces**
 
 ```http
@@ -201,7 +346,16 @@ GET /api/traces
 ```
 
 Returns up to 1000 most recent events, sorted by timestamp.  
-**Headers**: `X-Tenant-Id`, `Authorization: Bearer <DASHBOARD_API_KEY>`  
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Example:**
+
+```bash
+curl http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token"
+```
+
 **Response**: Array of Event objects.
 
 ```http
@@ -209,7 +363,16 @@ DELETE /api/traces
 ```
 
 Deletes all events and insights for the current tenant.  
-**Headers**: `X-Tenant-Id`, `Authorization: Bearer <DASHBOARD_API_KEY>`  
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:5050/api/traces \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token"
+```
+
 **Response**: `{ "ok": true }`
 
 #### **Insights**
@@ -220,7 +383,15 @@ GET /api/insights/:traceId
 
 Fetches insight for a trace. Returns cached if fresh (< 1 hour), else computes and caches.
 
-**Headers**: `X-Tenant-Id`, `Authorization: Bearer <DASHBOARD_API_KEY>`
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Example:**
+
+```bash
+curl http://localhost:5050/api/insights/abc123 \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token"
+```
 
 **Response (Success):**
 
@@ -234,7 +405,7 @@ Fetches insight for a trace. Returns cached if fresh (< 1 hour), else computes a
   },
   "cached": true,
   "computedAt": 1234567890,
-  "tenantId": "local"
+  "tenantId": "my-tenant"
 }
 ```
 
@@ -275,7 +446,16 @@ POST /api/insights/:traceId/regenerate
 
 Force regenerate insight (bypasses cache, respects sampling & rate limits).
 
-**Headers**: `X-Tenant-Id`, `Authorization: Bearer <DASHBOARD_API_KEY>`  
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:5050/api/insights/abc123/regenerate \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token"
+```
+
 **Response**: Same as GET.
 
 #### **Demo**
@@ -284,29 +464,52 @@ Force regenerate insight (bypasses cache, respects sampling & rate limits).
 POST /api/demo-seed
 ```
 
-Seeds demo traces for testing. Clears existing traces first.
+Seeds demo traces for testing. Clears existing demo traces first.
+
+**Headers**:
+
+- Always: `X-Tenant-Id`
+- Strict + `TENANTS_JSON` configured: `Authorization: Bearer <viewer-token>` **and** `X-Demo-Token: <demo-token>`
+- Strict + `TENANTS_JSON` empty: `Authorization: Bearer <demo-token>` (rejects `X-Demo-Token`)
+- Dev mode: no demo token required
 
 **Body** (optional):
 
 ```json
 {
-  "apps": ["mern-sample-app", "mern-sample-app-2"]
+  "apps": ["demo-my-tenant-app", "demo-app-my-tenant"]
 }
 ```
 
-**Headers**: `X-Tenant-Id`, `Authorization: Bearer <DASHBOARD_API_KEY>`  
+**Example:**
+
+```bash
+curl -X POST http://localhost:5050/api/demo-seed \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token" \
+  -H "X-Demo-Token: demo-token" \
+  -H "Content-Type: application/json" \
+  -d '{"apps": ["demo-my-tenant-app"]}'
+```
+
 **Response**:
 
 ```json
 {
   "ok": true,
   "count": 15,
-  "traceIdsByApp": { "mern-sample-app": [...] },
-  "tenantId": "local"
+  "traceIdsByApp": { "demo-my-tenant-app": [...] },
+  "tenantId": "my-tenant"
 }
 ```
 
 ### Socket.IO Events
+
+**UI handshake auth payload**:
+
+- `{ kind: "ui", tenantId, token? }`
+- `tenantId` is required
+- `token` is required when `TENANTS_JSON` is configured
 
 **Client → Server:**
 
@@ -364,7 +567,24 @@ CMD ["pnpm", "start"]
 
 ## 🧪 Demo Mode
 
-Click **Load Demo Data** button to seed 4 sample traces with realistic data. Useful for walkthroughs, testing filters, and validating insights without live agents.
+Demo mode is a **tenant-scoped toggle** that switches the UI between real and demo data.
+
+### Setup
+
+```bash
+DEMO_MODE_ENABLED=true
+DEMO_MODE_TOKEN=demo-secret-key
+VITE_DEMO_MODE_TOKEN=demo-secret-key
+```
+
+### Rules (test-aligned)
+
+- If `DEMO_MODE_ENABLED=false`: demo routes return 403 (`DEMO_MODE_DISABLED`).
+- Strict mode: demo is enabled only when `DEMO_MODE_TOKEN` is non-empty.
+- Token placement:
+  - `TENANTS_JSON` configured → `Authorization: Bearer <viewer-token>` **and** `X-Demo-Token: <demo-token>`
+  - `TENANTS_JSON` empty → `Authorization: Bearer <demo-token>` only (`X-Demo-Token` rejected)
+- Dev mode: no demo token required (still requires `X-Tenant-Id`).
 
 ---
 
@@ -398,7 +618,7 @@ Click **Load Demo Data** button to seed 4 sample traces with realistic data. Use
 - pnpm is the monorepo package manager
 - OPENAI_API_KEY optional (insights gracefully skip if missing)
 - Full-stack design: UI + API server in one package for simplicity
-- API key auth optional (set `DASHBOARD_API_KEY` to enable)
+- Viewer auth required when `TENANTS_JSON` is configured (use `Authorization: Bearer <viewer-token>`)
 - Multi-tenant support via `X-Tenant-Id` header
 
 ---

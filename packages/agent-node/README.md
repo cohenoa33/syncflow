@@ -94,6 +94,8 @@ const agent = new SyncFlowAgent({
 | `agentKey`        | string | (none)                  | Optional API key for authentication      |
 | `tenantId`        | string | (none)                  | Optional multi-tenant identifier         |
 
+**Auth alignment note:** The dashboard only accepts agent connections when `TENANTS_JSON` is configured. If your tenant defines `apps` in `TENANTS_JSON`, set `appName` + `agentKey` to the configured token. If no apps are defined, set `tenantId` (must exist in `TENANTS_JSON`).
+
 ### API
 
 **Methods:**

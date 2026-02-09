@@ -45,6 +45,8 @@ Environment variables are loaded from `.env` via `dotenv.config()`. **Never comm
 
 See [.env](./.env) for current values.
 
+**Dashboard auth note:** The dashboard only accepts agent connections when `TENANTS_JSON` is configured. If your tenant defines `apps` in `TENANTS_JSON`, set `SYNCFLOW_AGENT_KEY` to the app token. If no apps are defined, set `SYNCFLOW_TENANT_ID` to a configured tenant.
+
 ---
 
 ## Scripts
