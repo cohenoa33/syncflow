@@ -27,10 +27,11 @@ export function demoHeaders(
   if (hasTenantsConfig && viewerKey) {
     headers.Authorization = `Bearer ${viewerKey}`;
   }
-
+console.log("Requires demo token:", requiresDemoToken, "Has tenants config:", hasTenantsConfig);
   // Include demo token when required (strict mode)
   if (requiresDemoToken) {
     const demoToken = import.meta.env.VITE_DEMO_MODE_TOKEN;
+    console.log("Demo token required, token value:", demoToken);
     if (demoToken) {
       if (hasTenantsConfig) {
         headers["X-Demo-Token"] = demoToken;
