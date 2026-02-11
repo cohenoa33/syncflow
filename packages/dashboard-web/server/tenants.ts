@@ -25,14 +25,20 @@ type TenantsConfig = Record<
  */
 export function parseTenantsConfig(): TenantsConfig {
   const raw = process.env.TENANTS_JSON ?? "";
-
-    console.log("[Dashboard] raw TENANTS_JSON:  ", raw);
+  // DELETE THIS LOGGING BEFORE PRODUCTION RELEASE - this is to help debug tenant config issues during development and testing
+  console.log("[Dashboard] raw TENANTS_JSON:  ", raw);
 
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    console.log("[Dashboard] Parsing TENANTS_JSON status: ", parsed && typeof parsed === "object" ? "success" : "invalid format", );
-    console.log("[Dashboard] tenants:  ", parsed  );
+    // DELETE THIS LOGGING BEFORE PRODUCTION RELEASE - this is to help debug tenant config issues during development and testing
+
+    console.log(
+      "[Dashboard] Parsing TENANTS_JSON status: ",
+      parsed && typeof parsed === "object" ? "success" : "invalid format"
+    );
+    // DELETE THIS LOGGING BEFORE PRODUCTION RELEASE - this is to help debug tenant config issues during development and testing
+    console.log("[Dashboard] tenants:  ", parsed);
 
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
@@ -117,7 +123,7 @@ export function __TEST_resetAuthConfig() {
  */
 
 export function getAuthConfig(): AuthConfig {
-
+// DELETE THIS LOGGING BEFORE PRODUCTION RELEASE - this is to help debug tenant config issues during development and testing
   console.log(
     "[Dashboard] Evaluating auth configuration...",
     Object.keys(TENANTS).length > 0
@@ -150,7 +156,7 @@ export function getAuthConfig(): AuthConfig {
       const demoEnabledEffective =
         demoModeEnabled &&
         (authMode === "dev" || (authMode === "strict" && demoToken !== ""));
-
+      // DELETE THIS LOGGING BEFORE PRODUCTION RELEASE - this is to help debug tenant config issues during development and testing
       console.log("[Dashboard] Auth Configuration:", {
         authMode: _authConfig.authMode,
         hasTenantsConfig: _authConfig.hasTenantsConfig,
