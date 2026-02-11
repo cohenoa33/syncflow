@@ -18,12 +18,13 @@ export function demoHeaders(
 ): HeadersInit {
   const { requiresDemoToken = false, hasTenantsConfig = false } = options;
   const headers: Record<string, string> = {};
-
+console.log("Generating demo headers with options:", options);
   // Always include tenant ID (required)
   headers["X-Tenant-Id"] = TENANT_ID;
-
+  
   // Include viewer API key when tenants are configured (required for all /api/* routes)
   const viewerKey = import.meta.env.VITE_DASHBOARD_API_KEY;
+  console.log("viewerKey:", viewerKey);
   if (hasTenantsConfig && viewerKey) {
     headers.Authorization = `Bearer ${viewerKey}`;
   }
