@@ -11,6 +11,7 @@ build/
 .env
 .env.local
 .env.*.local
+.env.prod
 
 # IDE
 .vscode/
@@ -52,3 +53,5 @@ env/
 
 # SyncFlow hidden apps
 mern-sample-app-hidden/
+
+

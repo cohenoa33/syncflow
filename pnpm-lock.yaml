@@ -112,7 +112,7 @@ importers:
         version: 8.3.2
     devDependencies:
       '@types/node':
-        specifier: ^20.10.5
+        specifier: ^20.19.25
         version: 20.19.25
       '@types/uuid':
         specifier: ^8.3.4
