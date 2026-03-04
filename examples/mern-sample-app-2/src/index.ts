@@ -22,12 +22,10 @@ const agent = new SyncFlowAgent({
   tenantId: process.env.SYNCFLOW_TENANT_ID
 });
 
-agent.instrumentExpress(app);
-agent.instrumentMongoose(mongoose);
-agent.connect();
-
 // ✅ IMPORTANT: instrument mongoose BEFORE defining models
 agent.instrumentMongoose(mongoose);
+agent.instrumentExpress(app);
+agent.connect();
 
 // Define User model (now hooks will attach)
 const userSchema = new mongoose.Schema({
