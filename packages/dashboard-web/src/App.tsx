@@ -343,7 +343,7 @@ function Dashboard() {
 
     setTraceOpenMap((m) => {
       const next: Record<string, boolean> = {};
-      for (const g of filteredTraceGroups) next[g.traceId] = false;
+      for (const g of filteredTraceGroups) next[g.traceId] = true;
       return { ...m, ...next };
     });
   };
