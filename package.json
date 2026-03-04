@@ -4,6 +4,7 @@
   "private": true,
   "description": "SyncFlow - AI-powered full-stack dev assistant for MERN apps",
   "scripts": {
+    "dev:terminals": "echo 'Open VS Code Command Palette (Cmd+Shift+P) and run: Tasks: Run Task > Dev: All Terminals'",
     "dev": "pnpm --parallel --filter \"./packages/**\" --filter \"./examples/**\" dev",
     "dev:agent": "pnpm --filter agent-node dev",
     "dev:dashboard": "pnpm --filter dashboard-web dev",
