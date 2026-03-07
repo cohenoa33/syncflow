@@ -47,15 +47,18 @@ export async function fetchDemoConfig(): Promise<{
   demoModeEnabled: boolean;
   requiresDemoToken: boolean;
   hasTenantsConfig: boolean;
+  demoOnly: boolean;
 }> {
   const headers: Record<string, string> = {};
   if (TENANT_ID) headers["X-Tenant-Id"] = TENANT_ID;
 
+  const demoOnly = import.meta.env.VITE_DEMO_ONLY === "true";
   const res = await fetch(
     `${import.meta.env.VITE_API_BASE || "http://localhost:5050"}/api/config`,
     {
       headers
     }
   );
-  return res.json();
+  const data = await res.json();
+  return { ...data, demoOnly: demoOnly };
 }

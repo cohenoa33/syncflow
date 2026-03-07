@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
@@ -22,6 +23,7 @@ function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [connected, setConnected] = useState(false);
   const [showDemoPage, setShowDemoPage] = useState(false);
+  const [demoOnly, setDemoOnly] = useState(false);
 
   const [filter, setFilter] = useState<
     "all" | "express" | "mongoose" | "error"
@@ -79,6 +81,7 @@ function Dashboard() {
         setShowDemoToggle(config.demoModeEnabled);
         setRequiresDemoToken(config.requiresDemoToken);
         setHasTenantsConfig(config.hasTenantsConfig);
+        setDemoOnly(config.demoOnly || false);
       })
       .catch((err) => {
         console.error("[Dashboard] Failed to fetch demo config:", err);
@@ -650,6 +653,7 @@ function Dashboard() {
         onNavigateBack={() => setShowDemoPage(false)}
         requiresDemoToken={requiresDemoToken}
         hasTenantsConfig={hasTenantsConfig}
+ 
       />
     );
   }
@@ -664,7 +668,7 @@ function Dashboard() {
                 SyncFlow Dashboard
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                Real-time monitoring for MERn applications
+                Real-time monitoring for MERN applications
               </p>
             </div>
 
@@ -675,7 +679,7 @@ function Dashboard() {
                     setActionError(null);
                     setDemoModeEnabled(enabled);
                   }}
-                  disabled={!connected}
+                  disabled={demoOnly || !connected}
                   requiresDemoToken={requiresDemoToken}
                   hasTenantsConfig={hasTenantsConfig}
                 />
