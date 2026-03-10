@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
@@ -17,6 +16,7 @@ import { authHeaders, demoHeaders, fetchDemoConfig } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
+import { seedDemoData } from "./lib/seedDemoData";
 
 function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -78,16 +78,21 @@ function Dashboard() {
   useEffect(() => {
     fetchDemoConfig()
       .then((config) => {
+        setDemoOnly(config.demoOnly || false);
         setShowDemoToggle(config.demoModeEnabled);
         setRequiresDemoToken(config.requiresDemoToken);
         setHasTenantsConfig(config.hasTenantsConfig);
-        setDemoOnly(config.demoOnly || false);
       })
       .catch((err) => {
         console.error("[Dashboard] Failed to fetch demo config:", err);
       });
   }, []);
 
+  useEffect(() => {
+    if (demoOnly) {
+      setDemoModeEnabled(true);
+    }
+  }, [demoOnly]);
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
     let isMounted = true;
@@ -416,15 +421,19 @@ function Dashboard() {
   };
 
   const clearAll = async () => {
-    if (!confirm("Clear all traces?")) return;
+    const msg = demoModeEnabled ? "Replace & Generate" : "Clear";
+    if (!confirm(`${msg} all traces?`)) return;
 
     try {
       setActionError(null);
+      const options = demoModeEnabled
+        ? {
+            endpoint: "/api/demo-seed",
+            headers: demoHeaders({ requiresDemoToken, hasTenantsConfig })
+          }
+        : { endpoint: "/api/traces", headers: authHeaders() };
 
-      const endpoint = demoModeEnabled ? "/api/demo-seed" : "/api/traces";
-      const headers = demoModeEnabled
-        ? demoHeaders({ requiresDemoToken, hasTenantsConfig })
-        : authHeaders();
+      const { headers, endpoint } = options;
 
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "DELETE",
@@ -436,20 +445,28 @@ function Dashboard() {
         setActionError({
           status: res.status,
           error: (json as any)?.error,
-          message: (json as any)?.message ?? "Failed to clear traces",
+          message:
+            (json as any)?.message ?? `Failed to ${msg.toLowerCase()} traces`,
           context: "clearAll"
         });
         return;
       }
 
       if (demoModeEnabled) {
-        setEvents((prev) => prev.filter((e) => e.source !== "demo"));
+
+        const { ordered, initialOpen, initialTraceOpen } = await seedDemoData(
+          TENANT_ID,
+          requiresDemoToken,
+          hasTenantsConfig
+        );
+        setEvents(ordered);
+        setOpenMap(initialOpen);
+        setTraceOpenMap(initialTraceOpen);
       } else {
         setEvents((prev) => prev.filter((e) => e.source === "demo"));
+        setOpenMap({});
+        setTraceOpenMap({});
       }
-
-      setOpenMap({});
-      setTraceOpenMap({});
     } catch (err) {
       console.error("[Dashboard] clear traces failed", err);
       setActionError({
@@ -653,7 +670,6 @@ function Dashboard() {
         onNavigateBack={() => setShowDemoPage(false)}
         requiresDemoToken={requiresDemoToken}
         hasTenantsConfig={hasTenantsConfig}
- 
       />
     );
   }
@@ -722,6 +738,7 @@ function Dashboard() {
           setFilter={setFilter}
           onClear={clearAll}
           filterCounts={filterCounts}
+          demoMode={demoModeEnabled}
         />
 
         <SearchBar

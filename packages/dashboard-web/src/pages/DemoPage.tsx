@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { API_BASE, TENANT_ID } from "../lib/config";
-import { authHeaders, demoHeaders } from "../lib/api";
-import { getDemoAppNames } from "../lib/demoMode";
+import { TENANT_ID } from "../lib/config";
+import { seedDemoData, type DemoSeedError } from "../lib/seedDemoData";
 import type { Event } from "../lib/types";
+import { getDemoAppNames } from "../lib/demoMode";
 
 type Props = {
   onDemoComplete: (
@@ -22,109 +22,31 @@ export function DemoPage({
   hasTenantsConfig
 }: Props) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<{
-    status: number;
-    error?: string;
-    message?: string;
-  } | null>(null);
+  const [error, setError] = useState<DemoSeedError | null>(null);
 
   const runDemo = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Use tenant-scoped demo app names
-      const demoApps = getDemoAppNames(TENANT_ID);
-
-      // Seed demo traces (server will clear existing demo data for this tenant)
-      const res = await fetch(`${API_BASE}/api/demo-seed`, {
-        method: "POST",
-        headers: {
-          ...demoHeaders({ requiresDemoToken, hasTenantsConfig }),
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          apps: demoApps
-        })
-      });
-      const json: {
-        ok?: boolean;
-        count?: number;
-        traceIdsByApp?: Record<string, string[]>;
-        error?: string;
-        message?: string;
-      } = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError({
-          status: res.status,
-          error: json?.error,
-          message: json?.message ?? "Failed to seed demo data"
-        });
-        return;
-      }
-
-      if (!json?.ok) {
-        setError({
-          status: res.status,
-          error: json?.error,
-          message: json?.message ?? "Failed to seed demo data"
-        });
-        return;
-      }
-
-      // Fetch all traces (includes both demo and real)
-      const eventsRes = await fetch(`${API_BASE}/api/traces`, {
-        headers: authHeaders()
-      });
-      const eventsJson = await eventsRes.json().catch(() => ({}));
-
-      if (!eventsRes.ok) {
-        setError({
-          status: eventsRes.status,
-          error: (eventsJson as any)?.error,
-          message: (eventsJson as any)?.message ?? "Failed to load traces"
-        });
-        return;
-      }
-
-      const data: Event[] = Array.isArray(eventsJson) ? eventsJson : [];
-      const ordered = [...data].sort((a, b) => a.ts - b.ts);
-
-      const initialOpen: Record<string, boolean> = {};
-      const initialTraceOpen: Record<string, boolean> = {};
-      for (const e of ordered) {
-        initialOpen[e.id] = false;
-        const key = e.traceId ? e.traceId : `no-trace:${e.id}`;
-        if (!(key in initialTraceOpen)) initialTraceOpen[key] = false;
-      }
-
-      const allTraceIds = Object.values(json.traceIdsByApp ?? {}).flat();
-      const newestTraceId = allTraceIds.length
-        ? allTraceIds[allTraceIds.length - 1]
-        : undefined;
-
-      if (newestTraceId) initialTraceOpen[newestTraceId] = true;
-
-      if (newestTraceId) {
-        const newestTraceEvents = ordered
-          .filter((e) => e.traceId === newestTraceId)
-          .sort((a, b) => b.ts - a.ts);
-
-        const latestExpress = newestTraceEvents.find(
-          (e) => e.type === "express"
-        );
-        if (latestExpress) initialOpen[latestExpress.id] = true;
-      }
+      const { ordered, initialOpen, initialTraceOpen } = await seedDemoData(
+        TENANT_ID,
+        requiresDemoToken,
+        hasTenantsConfig
+      );
 
       onDemoComplete(ordered, initialOpen, initialTraceOpen);
       onNavigateBack();
     } catch (err) {
       console.error("[Dashboard] load demo trace data failed", err);
-      setError({
-        status: 0,
-        message: "Load Demo Data failed. Check the dashboard server logs."
-      });
+      if (err && typeof err === "object" && "status" in err) {
+        setError(err as DemoSeedError);
+      } else {
+        setError({
+          status: 0,
+          message: "Load Demo Data failed. Check the dashboard server logs."
+        });
+      }
     } finally {
       setLoading(false);
     }

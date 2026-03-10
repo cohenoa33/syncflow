@@ -50,7 +50,6 @@ export function DemoModeToggle({
           method: "DELETE",
           headers: demoHeaders({ requiresDemoToken, hasTenantsConfig })
         });
-
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
           throw new Error(json.message || "Failed to clear demo data");

@@ -8,13 +8,14 @@ type Props = {
     error: number;
   };
   onClear?: () => void;
+  demoMode: boolean;
 };
 
 export function TypeFilterBar({
   filter,
   setFilter,
   filterCounts,
-  onClear
+  onClear, demoMode
 }: Props) {
   return (
     <div className="bg-white rounded-lg shadow mb-6 p-4">
@@ -42,7 +43,7 @@ export function TypeFilterBar({
             onClick={onClear}
             className="ml-auto px-4 py-2 rounded-lg font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
           >
-            Clear
+            {demoMode ? "Replace & Generate" : "Clear"}
           </button>
         )}
       </div>
