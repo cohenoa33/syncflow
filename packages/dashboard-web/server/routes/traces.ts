@@ -50,12 +50,10 @@ export function registerTracesRoutes(app: Express, io: Server) {
       await InsightModel.deleteMany({ tenantId });
 
       // clear only real events for this tenant from the in-memory buffer
-      for (let i = eventsBuffer.length - 1; i >= 0; i--) {
-        const ev = eventsBuffer[i] as any;
-        if (ev.tenantId === tenantId && ev.source !== "demo") {
-          eventsBuffer.splice(i, 1);
-        }
-      }
+      const kept = eventsBuffer.filter(
+        (ev: any) => !(ev.tenantId === tenantId && ev.source !== "demo")
+      );
+      eventsBuffer.splice(0, eventsBuffer.length, ...kept);
 
       // Emit eventHistory only to tenant room (room-scoped)
       const room = `tenant:${tenantId}`;

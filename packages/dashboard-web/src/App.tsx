@@ -51,6 +51,7 @@ function Dashboard() {
   } | null>(null);
 
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showSlowOnly, setShowSlowOnly] = useState(false);
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
@@ -73,6 +74,12 @@ function Dashboard() {
     if (actionError.context === "demoToggle") return "Demo action failed";
     return "Action failed";
   }, [actionError]);
+
+  // ----- Debounce search query -----
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
 
   // ----- Fetch demo config to determine toggle visibility -----
   useEffect(() => {
@@ -297,7 +304,7 @@ function Dashboard() {
   }, [filteredEvents]);
 
   const filteredTraceGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
 
     return traceGroups.filter((g) => {
       if (showSlowOnly && !g.slow) return false;
@@ -322,7 +329,7 @@ function Dashboard() {
 
       return false;
     });
-  }, [traceGroups, query, showSlowOnly, showErrorsOnly]);
+  }, [traceGroups, debouncedQuery, showSlowOnly, showErrorsOnly]);
 
   // ----- Expand / collapse all payloads -----
   const expandAllPayloads = () => {
