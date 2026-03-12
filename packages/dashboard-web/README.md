@@ -176,6 +176,10 @@ To see real traces from instrumented apps, configure `TENANTS_JSON` and matching
 - `DEMO_MODE_ENABLED=true`, and
 - (`AUTH_MODE=dev`) OR (`AUTH_MODE=strict` AND `DEMO_MODE_TOKEN` is non-empty)
 
+### Auth failure rate limiting
+
+The server tracks failed auth attempts per client IP. After **20 failed attempts within 60 seconds**, the IP receives a `429 Too Many Requests` response until the window resets. This applies to: missing/unknown tenant, missing/invalid Bearer token.
+
 ### Header requirements (HTTP + Socket.IO)
 
 - All `/api/*` routes require `X-Tenant-Id` (including demo routes).

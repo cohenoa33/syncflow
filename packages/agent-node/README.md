@@ -120,7 +120,7 @@ Express Request → [capture] → Mongoose Query → [capture] →
 Each HTTP request gets a unique `traceId`. All database operations within that request's async context share the same `traceId`, enabling full request tracing across layers.
 
 **Sanitization:**
-Redacts: `password, pass, pwd, token, access_token, refresh_token, authorization, cookie, set-cookie, apiKey, apikey, secret, client_secret`
+Redacts: `password, pass, pwd, token, access_token, refresh_token, authorization, cookie, set-cookie, apikey, secret, client_secret`
 
 Limits: Max 4 levels deep, 50 keys per object, 2000 chars per string.
 

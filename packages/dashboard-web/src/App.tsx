@@ -268,27 +268,17 @@ function Dashboard() {
   };
 
   // ----- Filters -----
-  const filteredEvents = useMemo(() => {
-    let out = displayedEvents;
-
-    if (!allAppsSelected) {
-      if (selectedApps.size === 0) return [];
-      out = out.filter((e) => selectedApps.has(e.appName));
-    }
-
-    if (filter === "all") return out;
-    if (filter === "error") return out.filter((e) => e.level === "error");
-    return out.filter((e) => e.type === filter);
-  }, [displayedEvents, filter, allAppsSelected, selectedApps]);
-
   const appFilteredEvents = useMemo(() => {
-    let out = displayedEvents;
-    if (!allAppsSelected) {
-      if (selectedApps.size === 0) return [];
-      out = out.filter((e) => selectedApps.has(e.appName));
-    }
-    return out;
+    if (allAppsSelected) return displayedEvents;
+    if (selectedApps.size === 0) return [];
+    return displayedEvents.filter((e) => selectedApps.has(e.appName));
   }, [displayedEvents, allAppsSelected, selectedApps]);
+
+  const filteredEvents = useMemo(() => {
+    if (filter === "all") return appFilteredEvents;
+    if (filter === "error") return appFilteredEvents.filter((e) => e.level === "error");
+    return appFilteredEvents.filter((e) => e.type === filter);
+  }, [appFilteredEvents, filter]);
 
   const filterCounts = useMemo(() => {
     return {
