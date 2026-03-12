@@ -95,14 +95,15 @@ function Dashboard() {
   }, [demoOnly]);
   // ----- Load persisted history + attach live socket -----
   useEffect(() => {
-    let isMounted = true;
+    const controller = new AbortController();
     (async () => {
       try {
         setLoadingHistory(true);
         setTraceLoadError(null);
 
         const res = await fetch(`${API_BASE}/api/traces`, {
-          headers: authHeaders()
+          headers: authHeaders(),
+          signal: controller.signal
         });
 
         const json = await res.json().catch(() => ({}));
@@ -119,22 +120,20 @@ function Dashboard() {
         const data: Event[] = Array.isArray(json) ? json : [];
         const ordered = [...data].sort((a, b) => a.ts - b.ts);
 
-        if (!isMounted) return;
         setEvents(ordered);
 
         const { open, traceOpen } = buildInitialMaps(ordered);
         setOpenMap(open);
         setTraceOpenMap(traceOpen);
       } catch (err) {
+        if ((err as any)?.name === "AbortError") return;
         console.error("[Dashboard] failed to load traces", err);
-        if (isMounted) {
-          setTraceLoadError({
-            status: 0,
-            message: "Failed to load traces"
-          });
-        }
+        setTraceLoadError({
+          status: 0,
+          message: "Failed to load traces"
+        });
       } finally {
-        if (isMounted) setLoadingHistory(false);
+        if (!controller.signal.aborted) setLoadingHistory(false);
       }
     })();
 
@@ -187,7 +186,7 @@ function Dashboard() {
     });
 
     return () => {
-      isMounted = false;
+      controller.abort();
       socket.close();
     };
   }, []);
