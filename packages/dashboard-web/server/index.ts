@@ -26,9 +26,16 @@ async function main() {
   });
 
   const app = express();
+  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+    : ["http://localhost:5173"];
+
   app.use(
     cors({
-      origin: "*",
+      origin: (origin, cb) => {
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS: origin "${origin}" not allowed`));
+      },
       exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
     })
   );

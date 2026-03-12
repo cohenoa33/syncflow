@@ -115,12 +115,13 @@ Create `packages/dashboard-web/.env.local`:
 | `VITE_TENANT_ID`         | **Yes**  | —                                              | **REQUIRED**: Tenant ID for UI (no default) |
 | `MONGODB_URI`            | No       | `mongodb://localhost:27017/syncflow-dashboard` | —                                           |
 | `PORT`                   | No       | `5050`                                         | Dashboard server                            |
+| `CORS_ALLOWED_ORIGINS`   | No       | `http://localhost:5173`                        | Comma-separated allowed origins. Set to your production URL(s) in prod. |
 | `OPENAI_API_KEY`         | No       | —                                              | Required for AI Insights                    |
 | `ENABLE_AI_INSIGHTS`     | No       | `true`                                         | Disable to use heuristic analysis           |
 | `INSIGHT_MODEL`          | No       | `gpt-4o-mini`                                  | OpenAI model to use                         |
 | `VITE_API_BASE`          | No       | `http://localhost:5050`                        | Frontend API endpoint                       |
 | `VITE_SOCKET_URL`        | No       | `http://localhost:5050`                        | Frontend WebSocket endpoint                 |
-| `VITE_DASHBOARD_API_KEY` | No       | —                                              | Viewer token for Authorization header (required when TENANTS_JSON is configured)       |
+| `VITE_DASHBOARD_API_KEY` | No       | —                                              | Viewer token for Authorization header (required when TENANTS_JSON is configured) |
 
 See [.env.example](./packages/dashboard-web/.env.example) for all variables (AI rate limiting, sampling, multi-tenant config, etc.).
 
@@ -315,7 +316,7 @@ Dashboard UI (React + Tailwind)
 | **Port already in use**                       | Change `PORT` (dashboard) or ports in `package.json` scripts. Example: `PORT=5051 pnpm dev:server`.                                                                                                                     |
 | **AI Insights disabled / not generating**     | Set `OPENAI_API_KEY` and `ENABLE_AI_INSIGHTS=true`. Check dashboard logs for API errors. Heuristic insights (no API) always work.                                                                                       |
 | **Rate-limit error on insights**              | Wait for countdown or increase `AI_RATE_LIMIT_MAX` / `AI_RATE_LIMIT_WINDOW_MS`.                                                                                                                                         |
-| **CORS errors from UI**                       | Ensure `VITE_API_BASE` and `VITE_SOCKET_URL` match your dashboard server URL. In production, set them to empty (`""`) to use same-origin.                                                                               |
+| **CORS errors from UI**                       | Ensure `VITE_API_BASE` and `VITE_SOCKET_URL` match your dashboard server URL. In production, set them to empty (`""`) to use same-origin. Also set `CORS_ALLOWED_ORIGINS` to your dashboard's public URL on the server. |
 
 ---
 

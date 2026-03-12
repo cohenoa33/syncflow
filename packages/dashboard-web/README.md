@@ -99,6 +99,7 @@ All env vars go in `.env.local` (dev) or are set at runtime (prod). See [`.env.e
 
 - `MONGODB_URI` — Default: `mongodb://localhost:27017/syncflow-dashboard`
 - `PORT` — Default: `5050`
+- `CORS_ALLOWED_ORIGINS` — Comma-separated list of allowed request origins. Default: `http://localhost:5173`. Set to your production dashboard URL(s) in production (e.g. `https://dashboard.example.com`).
 - `VITE_API_BASE` — Default: same-origin (empty uses current origin)
 - `VITE_SOCKET_URL` — Default: same-origin
 

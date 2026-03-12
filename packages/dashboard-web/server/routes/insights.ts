@@ -153,8 +153,7 @@ export function registerInsightsRoutes(app: Express) {
         return res.status(e.status).json(e.body);
       }
 
-      const key =
-        req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+      const key = req.socket.remoteAddress ?? "unknown";
       const rl = checkRateLimit(`insight:regen:${tenantId}:${key}`);
       res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
       res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
