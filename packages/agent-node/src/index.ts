@@ -147,7 +147,7 @@ export class SyncFlowAgent {
   }
 
   connect(): void {
-    if (this.connected) {
+    if (this.socket) {
       console.log("[SyncFlow] Already connected");
       return;
     }
