@@ -362,8 +362,8 @@ export class SyncFlowAgent {
           if (typeof next === "function") next();
         });
 
-        // Error path
-        schema.post(op, function (this: any, err: any, next: any) {
+        // Error path — 3 args required so Mongoose treats this as an error hook
+        schema.post(op, function (this: any, err: any, _doc: any, next: any) {
           if (!err) return next?.();
 
           const start = this._syncflowStartTime || Date.now();

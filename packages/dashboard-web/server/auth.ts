@@ -1,6 +1,29 @@
 import type { Request, Response, NextFunction } from "express";
 import { TENANTS, getTenantFromHeaders, getAuthConfig } from "./tenants";
 
+// Track auth failures per IP — only increments on rejection, not on success
+const authFailBuckets = new Map<string, { count: number; resetAt: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of authFailBuckets) if (now >= b.resetAt) authFailBuckets.delete(k);
+}, 60_000).unref?.();
+
+function recordAuthFail(ip: string): boolean {
+  const windowMs = 60_000;
+  const max = 20;
+  const now = Date.now();
+  const cur = authFailBuckets.get(ip);
+
+  if (!cur || now >= cur.resetAt) {
+    authFailBuckets.set(ip, { count: 1, resetAt: now + windowMs });
+    return true; // under limit
+  }
+  if (cur.count >= max) return false; // rate limited
+  cur.count++;
+  return true; // under limit
+}
+
 /**
  * Express middleware: Require API key authentication for dashboard viewer routes
  *
@@ -14,12 +37,16 @@ import { TENANTS, getTenantFromHeaders, getAuthConfig } from "./tenants";
  * On success, attaches tenantId to req. On failure, responds with 4xx error.
  */
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
+  const ip = req.socket.remoteAddress ?? "unknown";
   const { hasTenantsConfig } = getAuthConfig();
 
   // Step 1: ALWAYS require X-Tenant-Id header (no fallback)
   const tenantFromHeader = getTenantFromHeaders(req.headers);
 
   if (!tenantFromHeader) {
+    if (!recordAuthFail(ip)) {
+      return res.status(429).json({ ok: false, error: "TOO_MANY_REQUESTS", message: "Too many failed auth attempts. Try again soon." });
+    }
     console.log(`[Dashboard] ❌ Auth failed: Missing X-Tenant-Id header`);
     return res.status(400).json({
       ok: false,
@@ -40,6 +67,9 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   // Step 3: If TENANTS_JSON has tenants, enforce strict validation
   // 3a: Tenant must exist in TENANTS
   if (!TENANTS[tenantFromHeader]) {
+    if (!recordAuthFail(ip)) {
+      return res.status(429).json({ ok: false, error: "TOO_MANY_REQUESTS", message: "Too many failed auth attempts. Try again soon." });
+    }
     console.log(
       `[Dashboard] ❌ Auth failed: Tenant "${tenantFromHeader}" not found in TENANTS_JSON`
     );
@@ -54,6 +84,9 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   const token = extractBearer(req);
 
   if (!token) {
+    if (!recordAuthFail(ip)) {
+      return res.status(429).json({ ok: false, error: "TOO_MANY_REQUESTS", message: "Too many failed auth attempts. Try again soon." });
+    }
     console.log(
       `[Dashboard] ❌ Auth failed: Missing Bearer token (tenant: ${tenantFromHeader})`
     );
@@ -66,6 +99,9 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
 
   // 3c: Validate token against dashboards config for this tenant
   if (!validateDashboardViewerToken(tenantFromHeader, token)) {
+    if (!recordAuthFail(ip)) {
+      return res.status(429).json({ ok: false, error: "TOO_MANY_REQUESTS", message: "Too many failed auth attempts. Try again soon." });
+    }
     console.log(
       `[Dashboard] ❌ Auth failed: Invalid token for tenant "${tenantFromHeader}"`
     );

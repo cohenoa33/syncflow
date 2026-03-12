@@ -63,7 +63,7 @@ export function registerInsightsRoutes(app: Express) {
 
         const statusCode =
           traceEvents.find((e: any) => e.type === "express")?.payload
-            ?.statusCode ?? undefined;
+            ?.response?.statusCode ?? undefined;
 
         const sample = shouldSampleInsight({
           traceId: `${tenantId}:${traceId}`,
@@ -79,8 +79,7 @@ export function registerInsightsRoutes(app: Express) {
           return res.status(e.status).json(e.body);
         }
 
-        const key =
-          req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+        const key = req.socket.remoteAddress ?? "unknown";
         const rl = checkRateLimit(`insight:get:${tenantId}:${key}`);
         res.setHeader("X-RateLimit-Remaining", String(rl.remaining));
         res.setHeader("X-RateLimit-Reset", String(rl.resetAt));
