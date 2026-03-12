@@ -428,7 +428,6 @@ function Dashboard() {
 
   const clearAll = async () => {
     const msg = demoModeEnabled ? "Replace & Generate" : "Clear";
-    if (!confirm(`${msg} all traces?`)) return;
 
     try {
       setActionError(null);
@@ -529,15 +528,10 @@ function Dashboard() {
             ? Math.max(0, Math.ceil((rl.resetAt - Date.now()) / 1000))
             : undefined;
 
-        throw {
-          __rateLimited: true,
-          rateLimit: rl,
-          resetInSec,
-          statusCode: res.status,
-          message:
-            (json as any)?.message ??
-            "Too many insight requests. Try again soon."
-        };
+        throw Object.assign(
+          new Error((json as any)?.message ?? "Too many insight requests. Try again soon."),
+          { __rateLimited: true, rateLimit: rl, resetInSec, statusCode: res.status }
+        );
       }
 
       if (!res.ok || !(json as any)?.ok) {
@@ -557,12 +551,10 @@ function Dashboard() {
           return;
         }
 
-        throw {
-          message: (json as any)?.message ?? "Failed to load insight",
-          code: (json as any)?.error,
-          statusCode: res.status,
-          rateLimit: rl
-        };
+        throw Object.assign(
+          new Error((json as any)?.message ?? "Failed to load insight"),
+          { code: (json as any)?.error, statusCode: res.status, rateLimit: rl }
+        );
       }
 
       setInsightStateMap((m) => ({
