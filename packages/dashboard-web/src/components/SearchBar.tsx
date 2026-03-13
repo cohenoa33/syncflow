@@ -11,9 +11,6 @@ type Props = {
 
   onExportJson: () => void;
   exportDisabled: boolean;
-
-  showingCount: number;
-  totalCount: number;
 };
 
 export function SearchBar({
@@ -25,11 +22,9 @@ export function SearchBar({
   setShowErrorsOnly,
   onExportJson,
   exportDisabled,
-  showingCount,
-  totalCount
 }: Props) {
   return (
-    <div className="bg-white rounded-lg shadow mb-6 p-4">
+    <div className="bg-white rounded-lg shadow mb-4 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <input
           value={query}
@@ -69,10 +64,6 @@ export function SearchBar({
         >
           Export JSON
         </button>
-
-        <div className="text-xs text-gray-500">
-          Showing {showingCount} / {totalCount}
-        </div>
       </div>
     </div>
   );

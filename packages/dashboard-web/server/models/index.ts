@@ -39,5 +39,6 @@ const InsightSchema = new mongoose.Schema(
 
 InsightSchema.index({ tenantId: 1, traceId: 1 }, { unique: true });
 
+
 export const EventModel = mongoose.model("SyncFlowEvent", EventSchema);
 export const InsightModel = mongoose.model("SyncFlowInsight", InsightSchema);

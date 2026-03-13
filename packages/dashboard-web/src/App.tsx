@@ -11,6 +11,7 @@ import { ApplicationsCard } from "./components/ApplicationsCard";
 import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
+import { PaginationBar } from "./components/PaginationBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
 import { authHeaders, demoHeaders, fetchDemoConfig } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
@@ -54,6 +55,10 @@ function Dashboard() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showSlowOnly, setShowSlowOnly] = useState(false);
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalGroups, setTotalGroups] = useState(0);
 
   const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
     {}
@@ -100,7 +105,7 @@ function Dashboard() {
       setDemoModeEnabled(true);
     }
   }, [demoOnly]);
-  // ----- Load persisted history + attach live socket -----
+  // ----- Fetch history (re-runs on page / pageSize change) -----
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
@@ -108,11 +113,10 @@ function Dashboard() {
         setLoadingHistory(true);
         setTraceLoadError(null);
 
-        const res = await fetch(`${API_BASE}/api/traces`, {
-          headers: authHeaders(),
-          signal: controller.signal
-        });
-
+        const res = await fetch(
+          `${API_BASE}/api/traces?page=${currentPage}&pageSize=${pageSize}`,
+          { headers: authHeaders(), signal: controller.signal }
+        );
         const json = await res.json().catch(() => ({}));
 
         if (!res.ok) {
@@ -124,10 +128,11 @@ function Dashboard() {
           return;
         }
 
-        const data: Event[] = Array.isArray(json) ? json : [];
+        const data: Event[] = Array.isArray(json.events) ? json.events : [];
         const ordered = [...data].sort((a, b) => a.ts - b.ts);
 
         setEvents(ordered);
+        setTotalGroups(json.totalGroups ?? 0);
 
         const { open, traceOpen } = buildInitialMaps(ordered);
         setOpenMap(open);
@@ -135,36 +140,28 @@ function Dashboard() {
       } catch (err) {
         if ((err as any)?.name === "AbortError") return;
         console.error("[Dashboard] failed to load traces", err);
-        setTraceLoadError({
-          status: 0,
-          message: "Failed to load traces"
-        });
+        setTraceLoadError({ status: 0, message: "Failed to load traces" });
       } finally {
         if (!controller.signal.aborted) setLoadingHistory(false);
       }
     })();
+    return () => controller.abort();
+  }, [currentPage, pageSize]);
 
+  // ----- Live socket (runs once) -----
+  useEffect(() => {
     const token = import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined;
 
     const socket = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
-      auth: {
-        kind: "ui",
-        token: token?.trim(),
-        tenantId: TENANT_ID
-      }
+      auth: { kind: "ui", token: token?.trim(), tenantId: TENANT_ID }
     });
 
     socket.on("connect", () => {
       setConnected(true);
-
-      const token = (
-        import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined
-      )?.trim();
-
       socket.emit("join_tenant", {
         tenantId: TENANT_ID,
-        token
+        token: (import.meta.env.VITE_DASHBOARD_API_KEY as string | undefined)?.trim()
       });
     });
 
@@ -174,29 +171,28 @@ function Dashboard() {
     socket.on("event", (event: Event) => {
       setEvents((prev) => {
         if (prev.length < 1000) return [...prev, event];
-        return [...prev.slice(1), event]; // drop oldest only when at cap
+        return [...prev.slice(1), event];
       });
+      setTotalGroups((n) => n + 1);
       setOpenMap((m) => ({ ...m, [event.id]: false }));
-
       const key = event.traceId ? event.traceId : `no-trace:${event.id}`;
       setTraceOpenMap((m) => (key in m ? m : { ...m, [key]: true }));
     });
 
     socket.on("eventHistory", (history: Event[]) => {
+      // Emitted after a clear-all — reset to empty page 0
       const ordered = [...history].sort((a, b) => a.ts - b.ts);
       setEvents(ordered);
-
+      setTotalGroups(0);
+      setCurrentPage(0);
       const { open, traceOpen } = buildInitialMaps(ordered);
       setOpenMap(open);
       setTraceOpenMap(traceOpen);
     });
 
-    socket.on("auth_error", (e) => {
-      console.error("[socket auth_error]", e);
-    });
+    socket.on("auth_error", (e) => console.error("[socket auth_error]", e));
 
     return () => {
-      controller.abort();
       socket.off("connect");
       socket.off("disconnect");
       socket.off("agents");
@@ -779,8 +775,15 @@ function Dashboard() {
           setShowErrorsOnly={setShowErrorsOnly}
           onExportJson={exportTracesJson}
           exportDisabled={filteredTraceGroups.length === 0}
-          showingCount={filteredTraceGroups.length}
-          totalCount={traceGroups.length}
+        />
+
+        <PaginationBar
+          currentPage={currentPage}
+          totalGroups={totalGroups}
+          pageSize={pageSize}
+          pageSizeOptions={[25, 50, 100, 200]}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(0); }}
         />
 
         {actionError && (
