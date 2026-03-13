@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Event, InsightState, TraceGroup } from "../../lib/types";
 import { EventList } from "./EventList";
 import { InsightPanel } from "./InsightPanel";
@@ -26,7 +27,16 @@ type Props = {
   insight: any;
 };
 
-export function TraceCard({
+function openMapEqual(
+  a: Record<string, boolean>,
+  b: Record<string, boolean>
+): boolean {
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  return keysA.every((k) => a[k] === b[k]);
+}
+
+export const TraceCard = memo(function TraceCard({
   nowMs,
   g,
   openMap,
@@ -191,4 +201,22 @@ export function TraceCard({
       )}
     </div>
   );
-}
+}, (prev, next) =>
+  prev.g === next.g &&
+  prev.traceOpen === next.traceOpen &&
+  prev.insightOpen === next.insightOpen &&
+  prev.insightState === next.insightState &&
+  prev.rateLimitedNow === next.rateLimitedNow &&
+  prev.retryInSec === next.retryInSec &&
+  prev.regenDisabled === next.regenDisabled &&
+  prev.freshnessLabel === next.freshnessLabel &&
+  prev.insight === next.insight &&
+  prev.copiedId === next.copiedId &&
+  prev.nowMs === next.nowMs &&
+  prev.onToggleTrace === next.onToggleTrace &&
+  prev.onTogglePayload === next.onTogglePayload &&
+  prev.onCopyPayload === next.onCopyPayload &&
+  prev.toggleInsight === next.toggleInsight &&
+  prev.onRegenerateInsight === next.onRegenerateInsight &&
+  openMapEqual(prev.openMap, next.openMap)
+);

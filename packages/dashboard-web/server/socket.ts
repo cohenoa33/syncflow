@@ -10,9 +10,13 @@ import { validateDashboardViewerToken } from "./auth";
 
 export function attachSocketServer(httpServer: HttpServer) {
   console.log("[Socket] Attaching Socket.IO server...");
+  const allowedOrigins = (
+    process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173"
+  ).split(",").map((s) => s.trim()).filter(Boolean);
+
   const io = new Server(httpServer, {
     cors: {
-      origin: "*",
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
       exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
     }

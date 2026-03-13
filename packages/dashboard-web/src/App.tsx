@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
 
 import type { Agent, Event, InsightState, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
-import { groupEventsIntoTraces } from "./lib/trace";
+import { groupEventsIntoTraces, buildTraceGroup } from "./lib/trace";
 import { buildInitialMaps } from "./lib/uiState";
 
 import { ApplicationsCard } from "./components/ApplicationsCard";
@@ -172,7 +172,10 @@ function Dashboard() {
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
-      setEvents((prev) => [...prev, event].slice(-1000));
+      setEvents((prev) => {
+        if (prev.length < 1000) return [...prev, event];
+        return [...prev.slice(1), event]; // drop oldest only when at cap
+      });
       setOpenMap((m) => ({ ...m, [event.id]: false }));
 
       const key = event.traceId ? event.traceId : `no-trace:${event.id}`;
@@ -194,6 +197,12 @@ function Dashboard() {
 
     return () => {
       controller.abort();
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("agents");
+      socket.off("event");
+      socket.off("eventHistory");
+      socket.off("auth_error");
       socket.close();
     };
   }, []);
@@ -281,17 +290,65 @@ function Dashboard() {
   }, [appFilteredEvents, filter]);
 
   const filterCounts = useMemo(() => {
-    return {
-      all: appFilteredEvents.length,
-      express: appFilteredEvents.filter((e) => e.type === "express").length,
-      mongoose: appFilteredEvents.filter((e) => e.type === "mongoose").length,
-      error: appFilteredEvents.filter((e) => e.level === "error").length
-    };
+    let express = 0, mongoose = 0, error = 0;
+    for (const e of appFilteredEvents) {
+      if (e.type === "express") express++;
+      else if (e.type === "mongoose") mongoose++;
+      if (e.level === "error") error++;
+    }
+    return { all: appFilteredEvents.length, express, mongoose, error };
   }, [appFilteredEvents]);
 
+  // Incremental grouping: on a simple single-event append reuse all unchanged
+  // TraceGroup objects and only rebuild the affected one. Falls back to full
+  // recompute when filters change or history is loaded.
+  const prevFilteredRef = useRef<Event[]>([]);
+  const prevGroupMapRef = useRef<Map<string, TraceGroup>>(new Map());
+
   const traceGroups: TraceGroup[] = useMemo(() => {
-    return groupEventsIntoTraces(filteredEvents);
+    const prev = prevFilteredRef.current;
+    const curr = filteredEvents;
+
+    const isSimpleAppend =
+      curr.length === prev.length + 1 &&
+      prev.length > 0 &&
+      prev[prev.length - 1] === curr[curr.length - 2]; // last of prev = second-to-last of curr
+
+    if (isSimpleAppend) {
+      const newEvent = curr[curr.length - 1];
+      const key = newEvent.traceId ? newEvent.traceId : `no-trace:${newEvent.id}`;
+      const groupMap = new Map(prevGroupMapRef.current);
+      const existing = groupMap.get(key);
+      groupMap.set(key, buildTraceGroup(key, existing ? [...existing.events, newEvent] : [newEvent]));
+      const result = Array.from(groupMap.values()).sort((a, b) => b.startedAt - a.startedAt);
+      prevFilteredRef.current = curr;
+      prevGroupMapRef.current = groupMap;
+      return result;
+    }
+
+    // Full recompute (filter change, history load, clear, etc.)
+    const result = groupEventsIntoTraces(curr);
+    prevFilteredRef.current = curr;
+    prevGroupMapRef.current = new Map(result.map((g) => [g.traceId, g]));
+    return result;
   }, [filteredEvents]);
+
+  // Pre-compute payload strings once per traceGroups change, not per keystroke
+  const payloadSampleMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const g of traceGroups) {
+      try {
+        map[g.traceId] = g.events
+          .slice(0, 4)
+          .map((e) => JSON.stringify(e.payload ?? {}))
+          .join(" ")
+          .toLowerCase();
+      } catch {
+        map[g.traceId] = "";
+      }
+    }
+    return map;
+  }, [traceGroups]);
 
   const filteredTraceGroups = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
@@ -306,85 +363,69 @@ function Dashboard() {
       if (g.appName.toLowerCase().includes(q)) return true;
       if (g.events.some((e) => e.operation.toLowerCase().includes(q)))
         return true;
-
-      try {
-        const sample = g.events
-          .slice(0, 4)
-          .map((e) => JSON.stringify(e.payload ?? {}))
-          .join(" ");
-        if (sample.toLowerCase().includes(q)) return true;
-      } catch {
-        // ignore
-      }
+      if (payloadSampleMap[g.traceId]?.includes(q)) return true;
 
       return false;
     });
-  }, [traceGroups, debouncedQuery, showSlowOnly, showErrorsOnly]);
+  }, [traceGroups, payloadSampleMap, debouncedQuery, showSlowOnly, showErrorsOnly]);
 
   // ----- Expand / collapse all payloads -----
-  const expandAllPayloads = () => {
-    setOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of filteredTraceGroups)
-        for (const e of g.events) next[e.id] = true;
-      return { ...m, ...next };
-    });
+  const expandAllPayloads = useCallback(() => {
+    const nextOpen: Record<string, boolean> = {};
+    const nextTraceOpen: Record<string, boolean> = {};
+    for (const g of filteredTraceGroups) {
+      nextTraceOpen[g.traceId] = true;
+      for (const e of g.events) nextOpen[e.id] = true;
+    }
+    setOpenMap((m) => ({ ...m, ...nextOpen }));
+    setTraceOpenMap((m) => ({ ...m, ...nextTraceOpen }));
+  }, [filteredTraceGroups]);
 
-    setTraceOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of filteredTraceGroups) next[g.traceId] = true;
-      return { ...m, ...next };
-    });
-  };
+  const collapseAllPayloads = useCallback(() => {
+    const nextOpen: Record<string, boolean> = {};
+    const nextTraceOpen: Record<string, boolean> = {};
+    for (const g of filteredTraceGroups) {
+      nextTraceOpen[g.traceId] = false;
+      for (const e of g.events) nextOpen[e.id] = false;
+    }
+    setOpenMap((m) => ({ ...m, ...nextOpen }));
+    setTraceOpenMap((m) => ({ ...m, ...nextTraceOpen }));
+  }, [filteredTraceGroups]);
 
-  const collapseAllPayloads = () => {
-    setOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of filteredTraceGroups)
-        for (const e of g.events) next[e.id] = false;
-      return { ...m, ...next };
-    });
-
-    setTraceOpenMap((m) => {
-      const next: Record<string, boolean> = {};
-      for (const g of filteredTraceGroups) next[g.traceId] = false;
-      return { ...m, ...next };
-    });
-  };
-
-  const anyPayloadClosed = filteredTraceGroups.some((g) =>
-    g.events.some((e) => !openMap[e.id])
+  const anyPayloadClosed = useMemo(
+    () => filteredTraceGroups.some((g) => g.events.some((e) => !openMap[e.id])),
+    [filteredTraceGroups, openMap]
   );
 
   // Keyboard shortcuts
+  const onKeyDown = useCallback((ev: KeyboardEvent) => {
+    const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
+    if (
+      tag === "input" ||
+      tag === "textarea" ||
+      (ev.target as HTMLElement)?.isContentEditable
+    ) {
+      return;
+    }
+
+    if (ev.key === "e" && !ev.shiftKey) {
+      const latest = filteredEvents[filteredEvents.length - 1];
+      if (!latest) return;
+      setOpenMap((m) => ({ ...m, [latest.id]: !m[latest.id] }));
+      ev.preventDefault();
+    }
+
+    if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
+      if (anyPayloadClosed) expandAllPayloads();
+      else collapseAllPayloads();
+      ev.preventDefault();
+    }
+  }, [filteredEvents, anyPayloadClosed, expandAllPayloads, collapseAllPayloads]);
+
   useEffect(() => {
-    const onKeyDown = (ev: KeyboardEvent) => {
-      const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
-      if (
-        tag === "input" ||
-        tag === "textarea" ||
-        (ev.target as HTMLElement)?.isContentEditable
-      ) {
-        return;
-      }
-
-      if (ev.key === "e" && !ev.shiftKey) {
-        const latest = filteredEvents[filteredEvents.length - 1];
-        if (!latest) return;
-        setOpenMap((m) => ({ ...m, [latest.id]: !m[latest.id] }));
-        ev.preventDefault();
-      }
-
-      if (ev.key === "E" || (ev.key === "e" && ev.shiftKey)) {
-        if (anyPayloadClosed) expandAllPayloads();
-        else collapseAllPayloads();
-        ev.preventDefault();
-      }
-    };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredEvents, anyPayloadClosed, filteredTraceGroups]);
+  }, [onKeyDown]);
 
   // ----- Actions -----
   const exportTracesJson = () => {
@@ -472,13 +513,13 @@ function Dashboard() {
     }
   };
 
-  const toggleTrace = (traceId: string) =>
-    setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] }));
+  const toggleTrace = useCallback((traceId: string) =>
+    setTraceOpenMap((m) => ({ ...m, [traceId]: !m[traceId] })), []);
 
-  const togglePayload = (id: string) =>
-    setOpenMap((m) => ({ ...m, [id]: !m[id] }));
+  const togglePayload = useCallback((id: string) =>
+    setOpenMap((m) => ({ ...m, [id]: !m[id] })), []);
 
-  const copyPayload = async (event: Event) => {
+  const copyPayload = useCallback(async (event: Event) => {
     try {
       const text = JSON.stringify(event.payload ?? {}, null, 2);
       await navigator.clipboard.writeText(text);
@@ -490,9 +531,9 @@ function Dashboard() {
       console.error("Failed to copy payload", err);
       alert("Copy failed. Your browser may block clipboard access.");
     }
-  };
+  }, []);
 
-  const toggleInsight = async (traceId: string) => {
+  const toggleInsight = useCallback(async (traceId: string) => {
     const willOpen = !(insightOpenMap[traceId] ?? false);
     setInsightOpenMap((m) => ({ ...m, [traceId]: willOpen }));
     if (!willOpen) return;
@@ -574,9 +615,9 @@ function Dashboard() {
         }
       }));
     }
-  };
+  }, [insightStateMap]);
 
-  const regenerateInsight = async (traceId: string) => {
+  const regenerateInsight = useCallback(async (traceId: string) => {
     setInsightOpenMap((m) => ({ ...m, [traceId]: true }));
     setInsightStateMap((m) => ({ ...m, [traceId]: { status: "loading" } }));
 
@@ -644,7 +685,7 @@ function Dashboard() {
         }
       }));
     }
-  };
+  }, []);
 
   if (showDemoPage) {
     return (

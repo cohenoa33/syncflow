@@ -1,5 +1,6 @@
 import type { Event, InsightState, TraceGroup } from "../lib/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { TraceCard } from "./traces/TraceCard";
 
 type Props = {
@@ -45,13 +46,15 @@ export function TraceList({
   setInsightOpenMap,
   onRegenerateInsight
 }: Props) {
-  const [, forceTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => forceTick((x) => x + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useWindowVirtualizer({
+    count: filteredTraceGroups.length,
+    estimateSize: () => 80,           // collapsed card height estimate
+    overscan: 5,                       // render 5 extra cards above/below viewport
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  });
 
   const tickMode = useMemo(() => {
     // fast tick if ANY open insight is rate-limited right now
@@ -138,8 +141,12 @@ export function TraceList({
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-200">
-          {filteredTraceGroups.map((g) => {
+        <div
+          ref={listRef}
+          style={{ position: "relative", height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const g = filteredTraceGroups[virtualRow.index];
             const traceOpen = traceOpenMap[g.traceId] ?? true;
             const insightOpen = !!insightOpenMap[g.traceId];
             const insightState = insightStateMap[g.traceId] ?? {
@@ -165,35 +172,48 @@ export function TraceList({
               insightState.status === "ready" ? insightState.meta : undefined;
 
             let freshnessLabel: string | undefined;
+            if (meta?.cached === true) freshnessLabel = "Cached";
+            else if (meta?.cached === false) freshnessLabel = "Fresh";
 
-            if (meta?.cached === true) {
-              freshnessLabel = "Cached";
-            } else if (meta?.cached === false) {
-              freshnessLabel = "Fresh";
-            }
+            // Slice openMap to only this card's event IDs
+            const cardOpenMap: Record<string, boolean> = {};
+            for (const e of g.events) cardOpenMap[e.id] = !!openMap[e.id];
 
             return (
-              <TraceCard
+              <div
                 key={g.traceId}
-                g={g}
-                openMap={openMap}
-                traceOpen={traceOpen}
-                insightOpen={insightOpen}
-                insightState={insightState}
-                rateLimitedNow={rateLimitedNow}
-                retryInSec={retryInSec ?? null}
-                regenDisabled={regenDisabled}
-                freshnessLabel={freshnessLabel ?? null}
-                insight={insight}
-                onToggleTrace={onToggleTrace}
-                onTogglePayload={onTogglePayload}
-                onCopyPayload={onCopyPayload}
-                toggleInsight={toggleInsight}
-                setInsightOpenMap={setInsightOpenMap}
-                onRegenerateInsight={onRegenerateInsight}
-                nowMs={nowMs}
-                copiedId={copiedId}
-              />
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                }}
+                className="border-b border-gray-200"
+              >
+                <TraceCard
+                  g={g}
+                  openMap={cardOpenMap}
+                  traceOpen={traceOpen}
+                  insightOpen={insightOpen}
+                  insightState={insightState}
+                  rateLimitedNow={rateLimitedNow}
+                  retryInSec={retryInSec ?? null}
+                  regenDisabled={regenDisabled}
+                  freshnessLabel={freshnessLabel ?? null}
+                  insight={insight}
+                  onToggleTrace={onToggleTrace}
+                  onTogglePayload={onTogglePayload}
+                  onCopyPayload={onCopyPayload}
+                  toggleInsight={toggleInsight}
+                  setInsightOpenMap={setInsightOpenMap}
+                  onRegenerateInsight={onRegenerateInsight}
+                  nowMs={nowMs}
+                  copiedId={copiedId}
+                />
+              </div>
             );
           })}
         </div>

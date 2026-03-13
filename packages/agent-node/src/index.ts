@@ -128,7 +128,8 @@ export class SyncFlowAgent {
   private connected = false;
   private slowMsThreshold: number;
   private agentKey: string | undefined;
-  private tenantId?: string ;
+  private tenantId?: string;
+  private mongooseInstrumented = false;
 
   private als = new AsyncLocalStorage<{ traceId: string }>();
 
@@ -292,6 +293,11 @@ export class SyncFlowAgent {
       console.error("[SyncFlow] Invalid Mongoose instance provided");
       return;
     }
+    if (this.mongooseInstrumented) {
+      console.warn("[SyncFlow] instrumentMongoose() already called — skipping duplicate registration");
+      return;
+    }
+    this.mongooseInstrumented = true;
 
     const agent = this;
 

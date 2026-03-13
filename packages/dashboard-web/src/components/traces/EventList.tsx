@@ -1,5 +1,21 @@
 import type { Event } from "../../lib/types";
 
+function getTypeBadgeClasses(type: Event["type"]): string {
+  return type === "express"
+    ? "bg-blue-100 text-blue-800"
+    : type === "mongoose"
+      ? "bg-green-100 text-green-800"
+      : "bg-red-100 text-red-800";
+}
+
+function getLevelBadgeClasses(level: Event["level"]): string {
+  return level === "info"
+    ? "bg-slate-100 text-slate-700"
+    : level === "warn"
+      ? "bg-amber-100 text-amber-800"
+      : "bg-rose-100 text-rose-800";
+}
+
 type Props = {
   event: Event;
   onTogglePayload: (eventId: string) => void;
@@ -14,19 +30,6 @@ export function EventList({
   onTogglePayload,
   onCopyPayload
 }: Props) {
-  const getTypeBadgeClasses = (type: Event["type"]) =>
-    type === "express"
-      ? "bg-blue-100 text-blue-800"
-      : type === "mongoose"
-        ? "bg-green-100 text-green-800"
-        : "bg-red-100 text-red-800";
-
-  const getLevelBadgeClasses = (level: Event["level"]) =>
-    level === "info"
-      ? "bg-slate-100 text-slate-700"
-      : level === "warn"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-rose-100 text-rose-800";
 
   return (
     <div className="p-3 transition-colors">
