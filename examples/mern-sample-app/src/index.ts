@@ -53,6 +53,47 @@ app.get("/", (_req, res) => {
   });
 });
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const randDelay = (min: number, max: number) =>
+  delay(Math.floor(Math.random() * (max - min + 1)) + min);
+
+// Slow search — simulates unindexed regex + network lag
+app.get("/api/users/search", async (req, res) => {
+  try {
+    const q = (req.query.q as string) || "";
+    const regex = new RegExp(q, "i");
+    await randDelay(600, 1400); // simulate slow query
+    const users = await User.find({ $or: [{ name: regex }, { email: regex }] });
+    res.json(users);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Slow stats — multiple sequential DB ops + delay
+app.get("/api/users/stats", async (_req, res) => {
+  try {
+    await randDelay(800, 2000); // simulate aggregation pipeline lag
+    const total = await User.countDocuments();
+    const recent = await User.find().sort({ createdAt: -1 }).limit(5);
+    const oldest = await User.find().sort({ createdAt: 1 }).limit(1);
+    res.json({ total, recent: recent.length, oldestEmail: oldest[0]?.email ?? null });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Slow export — simulates a heavy data dump
+app.get("/api/users/export", async (_req, res) => {
+  try {
+    await randDelay(1000, 2500);
+    const users = await User.find();
+    res.json({ exported: users.length, data: users });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all users
 app.get("/api/users", async (_req, res) => {
   try {

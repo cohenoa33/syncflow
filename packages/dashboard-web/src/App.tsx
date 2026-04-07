@@ -19,6 +19,8 @@ import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 import { seedDemoData } from "./lib/seedDemoData";
 
+type KnownGroupTypes = { hasExpress: boolean; hasMongoose: boolean; hasError: boolean };
+
 function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -35,6 +37,9 @@ function Dashboard() {
 
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [traceOpenMap, setTraceOpenMap] = useState<Record<string, boolean>>({});
+  const traceOpenMapRef = useRef<Record<string, boolean>>({});
+  traceOpenMapRef.current = traceOpenMap;
+  const knownTypesRef = useRef<Map<string, KnownGroupTypes>>(new Map());
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -59,6 +64,9 @@ function Dashboard() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [totalGroups, setTotalGroups] = useState(0);
+  const [expressGroups, setExpressGroups] = useState(0);
+  const [mongooseGroups, setMongooseGroups] = useState(0);
+  const [errorGroups, setErrorGroups] = useState(0);
 
   const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
     {}
@@ -105,7 +113,14 @@ function Dashboard() {
       setDemoModeEnabled(true);
     }
   }, [demoOnly]);
-  // ----- Fetch history (re-runs on page / pageSize change) -----
+  // ----- Reset to page 0 when search / slow / errorsOnly filters change -----
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    setCurrentPage(0);
+  }, [debouncedQuery, showSlowOnly, showErrorsOnly]);
+
+  // ----- Fetch history (re-runs on page / pageSize / filter / search change) -----
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
@@ -113,8 +128,16 @@ function Dashboard() {
         setLoadingHistory(true);
         setTraceLoadError(null);
 
+        const params = new URLSearchParams({
+          page: String(currentPage),
+          pageSize: String(pageSize),
+          filter,
+          ...(debouncedQuery ? { q: debouncedQuery } : {}),
+          ...(showSlowOnly ? { slowOnly: "true" } : {}),
+          ...(showErrorsOnly ? { errorsOnly: "true" } : {}),
+        });
         const res = await fetch(
-          `${API_BASE}/api/traces?page=${currentPage}&pageSize=${pageSize}`,
+          `${API_BASE}/api/traces?${params}`,
           { headers: authHeaders(), signal: controller.signal }
         );
         const json = await res.json().catch(() => ({}));
@@ -133,6 +156,23 @@ function Dashboard() {
 
         setEvents(ordered);
         setTotalGroups(json.totalGroups ?? 0);
+        setExpressGroups(json.expressGroups ?? 0);
+        setMongooseGroups(json.mongooseGroups ?? 0);
+        setErrorGroups(json.errorGroups ?? 0);
+
+        // Build known-types map so the socket handler can correctly
+        // detect when an incoming event introduces a new type to a group.
+        const typesMap = new Map<string, KnownGroupTypes>();
+        for (const e of ordered) {
+          const k = e.traceId ?? `no-trace:${e.id}`;
+          const prev = typesMap.get(k) ?? { hasExpress: false, hasMongoose: false, hasError: false };
+          typesMap.set(k, {
+            hasExpress: prev.hasExpress || e.type === "express",
+            hasMongoose: prev.hasMongoose || e.type === "mongoose",
+            hasError: prev.hasError || e.level === "error",
+          });
+        }
+        knownTypesRef.current = typesMap;
 
         const { open, traceOpen } = buildInitialMaps(ordered);
         setOpenMap(open);
@@ -146,7 +186,7 @@ function Dashboard() {
       }
     })();
     return () => controller.abort();
-  }, [currentPage, pageSize]);
+  }, [currentPage, pageSize, filter, debouncedQuery, showSlowOnly, showErrorsOnly]);
 
   // ----- Live socket (runs once) -----
   useEffect(() => {
@@ -169,13 +209,26 @@ function Dashboard() {
     socket.on("agents", (agentList: Agent[]) => setAgents(agentList));
 
     socket.on("event", (event: Event) => {
+      const key = event.traceId ? event.traceId : `no-trace:${event.id}`;
+      const isNewGroup = !(key in traceOpenMapRef.current);
+      const known = knownTypesRef.current.get(key) ?? { hasExpress: false, hasMongoose: false, hasError: false };
+
+      if (isNewGroup) setTotalGroups((n) => n + 1);
+      if (event.type === "express" && !known.hasExpress) setExpressGroups((n) => n + 1);
+      if (event.type === "mongoose" && !known.hasMongoose) setMongooseGroups((n) => n + 1);
+      if (event.level === "error" && !known.hasError) setErrorGroups((n) => n + 1);
+
+      knownTypesRef.current.set(key, {
+        hasExpress: known.hasExpress || event.type === "express",
+        hasMongoose: known.hasMongoose || event.type === "mongoose",
+        hasError: known.hasError || event.level === "error",
+      });
+
       setEvents((prev) => {
         if (prev.length < 1000) return [...prev, event];
         return [...prev.slice(1), event];
       });
-      setTotalGroups((n) => n + 1);
       setOpenMap((m) => ({ ...m, [event.id]: false }));
-      const key = event.traceId ? event.traceId : `no-trace:${event.id}`;
       setTraceOpenMap((m) => (key in m ? m : { ...m, [key]: true }));
     });
 
@@ -184,6 +237,10 @@ function Dashboard() {
       const ordered = [...history].sort((a, b) => a.ts - b.ts);
       setEvents(ordered);
       setTotalGroups(0);
+      setExpressGroups(0);
+      setMongooseGroups(0);
+      setErrorGroups(0);
+      knownTypesRef.current = new Map();
       setCurrentPage(0);
       const { open, traceOpen } = buildInitialMaps(ordered);
       setOpenMap(open);
@@ -285,15 +342,10 @@ function Dashboard() {
     return appFilteredEvents.filter((e) => e.type === filter);
   }, [appFilteredEvents, filter]);
 
-  const filterCounts = useMemo(() => {
-    let express = 0, mongoose = 0, error = 0;
-    for (const e of appFilteredEvents) {
-      if (e.type === "express") express++;
-      else if (e.type === "mongoose") mongoose++;
-      if (e.level === "error") error++;
-    }
-    return { all: appFilteredEvents.length, express, mongoose, error };
-  }, [appFilteredEvents]);
+  const filterCounts = useMemo(
+    () => ({ all: totalGroups, express: expressGroups, mongoose: mongooseGroups, error: errorGroups }),
+    [totalGroups, expressGroups, mongooseGroups, errorGroups]
+  );
 
   // Incremental grouping: on a simple single-event append reuse all unchanged
   // TraceGroup objects and only rebuild the affected one. Falls back to full
@@ -760,7 +812,7 @@ function Dashboard() {
 
         <TypeFilterBar
           filter={filter}
-          setFilter={setFilter}
+          setFilter={(f) => { setFilter(f); setCurrentPage(0); }}
           onClear={clearAll}
           filterCounts={filterCounts}
           demoMode={demoModeEnabled}
@@ -779,7 +831,7 @@ function Dashboard() {
 
         <PaginationBar
           currentPage={currentPage}
-          totalGroups={totalGroups}
+          totalGroups={filterCounts[filter]}
           pageSize={pageSize}
           pageSizeOptions={[25, 50, 100, 200]}
           onPageChange={setCurrentPage}
