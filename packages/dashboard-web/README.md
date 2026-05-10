@@ -17,6 +17,7 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 - 🎯 **App filtering** via multi-select chips (smart toggle: all → all except clicked)
 - ⚡ **Fast filters**: slow traces only, errors only
 - 📤 **Export** currently filtered traces as JSON
+- 🔗 **Distributed trace detection** — traces spanning multiple services are visually flagged; upstream caller shown per event
 
 ### AI Insights (Optional)
 

@@ -290,6 +290,7 @@ Dashboard UI (React + Tailwind)
 
 - Real-time trace streaming via Socket.IO
 - Trace grouping by `traceId` (HTTP request + related DB operations)
+- Distributed trace detection (cross-service traces visually grouped and labeled)
 - Search + filters: type (Express/Mongoose/Error), app, slow (>500ms), errors
 - Export traces as JSON
 - MongoDB persistence of all events
@@ -371,7 +372,7 @@ Each package has its own detailed README:
 ### 🚧 Phase 4: Production Ready
 
 - Authentication and multi-tenant support
-- Distributed tracing for microservices
+- ✅ Distributed tracing for microservices
 - Historical metrics dashboards
 - Alerting and notifications
 

@@ -97,6 +97,12 @@ export const TraceCard = memo(function TraceCard({
             {g.events.length} event{g.events.length !== 1 ? "s" : ""}
           </span>
 
+          {g.isDistributed && (
+            <span className="px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-800" title="Trace spans multiple services">
+              distributed
+            </span>
+          )}
+
           {g.displayTraceId && (
             <span className="text-xs text-gray-400 font-mono">
               trace:{g.displayTraceId}

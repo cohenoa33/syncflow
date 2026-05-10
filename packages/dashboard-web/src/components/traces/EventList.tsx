@@ -57,6 +57,12 @@ export function EventList({
                 {event.durationMs}ms
               </span>
             )}
+
+            {event.parentApp && (
+              <span className="text-xs text-violet-600 italic">
+                called by {event.parentApp}
+              </span>
+            )}
           </div>
 
           <p className="font-mono text-sm text-gray-900 mb-2">

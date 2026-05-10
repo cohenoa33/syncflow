@@ -26,6 +26,7 @@ const agent = new SyncFlowAgent({
 agent.instrumentMongoose(mongoose);
 agent.instrumentExpress(app);
 agent.connect();
+agent.instrumentHttp();
 
 // Define User model (now hooks will attach)
 const userSchema = new mongoose.Schema({

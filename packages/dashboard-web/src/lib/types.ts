@@ -6,6 +6,7 @@ export interface Event {
   ts: number;
   durationMs?: number;
   traceId?: string;
+  parentApp?: string;
   level: "info" | "warn" | "error";
   payload: Record<string, any>;
   receivedAt?: number;
@@ -30,6 +31,7 @@ export type TraceGroup = {
   ok?: boolean;
   slow?: boolean;
   hasError?: boolean;
+  isDistributed?: boolean;
 };
 export type RateLimitMeta = {
   remaining?: number;

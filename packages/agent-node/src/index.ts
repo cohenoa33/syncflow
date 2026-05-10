@@ -1,6 +1,11 @@
 import { io, Socket } from "socket.io-client";
 import { v4 as uuidv4 } from "uuid";
 import { AsyncLocalStorage } from "node:async_hooks";
+import * as http from "node:http";
+import * as https from "node:https";
+
+const TRACE_ID_HEADER = "x-syncflow-trace-id";
+const PARENT_APP_HEADER = "x-syncflow-parent-app";
 export interface SyncFlowAgentOptions {
   dashboardUrl?: string;
   appName?: string;
@@ -20,6 +25,7 @@ export interface SyncFlowEvent {
   ts: number;
   durationMs?: number;
   traceId?: string;
+  parentApp?: string;
   level: SyncFlowEventLevel;
   payload: Record<string, any>;
 }
@@ -130,8 +136,9 @@ export class SyncFlowAgent {
   private agentKey: string | undefined;
   private tenantId?: string;
   private mongooseInstrumented = false;
+  private httpPatched = false;
 
-  private als = new AsyncLocalStorage<{ traceId: string }>();
+  private als = new AsyncLocalStorage<{ traceId: string; parentApp?: string }>();
 
   private currentTraceId(): string | undefined {
     return this.als.getStore()?.traceId;
@@ -221,9 +228,14 @@ export class SyncFlowAgent {
     }
 
     app.use((req: any, res: any, next: any) => {
-      const traceId = uuidv4();
+      const rawTraceId = req.headers[TRACE_ID_HEADER];
+      const rawParentApp = req.headers[PARENT_APP_HEADER];
+      const inheritedTraceId = typeof rawTraceId === "string" && rawTraceId ? rawTraceId : undefined;
+      const inheritedParentApp = typeof rawParentApp === "string" && rawParentApp ? rawParentApp : undefined;
+      const traceId = inheritedTraceId ?? uuidv4();
+      const parentApp = inheritedParentApp;
 
-      this.als.run({ traceId }, () => {
+      this.als.run({ traceId, parentApp }, () => {
         const start = Date.now();
         const originalSend = res.send;
         const agent = this;
@@ -256,6 +268,7 @@ export class SyncFlowAgent {
             durationMs,
             level,
             traceId: agent.currentTraceId(),
+            parentApp: agent.als.getStore()?.parentApp,
             payload: {
               request: {
                 method: req.method,
@@ -396,6 +409,66 @@ export class SyncFlowAgent {
     });
 
     console.log("[SyncFlow] Mongoose instrumentation enabled");
+  }
+
+  /**
+   * Patch Node's http/https.request to inject trace headers into outgoing calls.
+   * Safe to call multiple times — subsequent calls are no-ops.
+   */
+  instrumentHttp(): void {
+    if (this.httpPatched) {
+      console.warn("[SyncFlow] instrumentHttp() already called — skipping");
+      return;
+    }
+    this.httpPatched = true;
+
+    const agent = this;
+
+    function patch(mod: typeof http | typeof https): void {
+      const original = mod.request.bind(mod) as typeof mod.request;
+      (mod.request as any) = function (
+        urlOrOptions: any,
+        optionsOrCallback?: any,
+        maybeCallback?: any
+      ) {
+        const store = agent.als.getStore();
+        if (!store) {
+          return (original as any)(urlOrOptions, optionsOrCallback, maybeCallback);
+        }
+
+        const extraHeaders = {
+          [TRACE_ID_HEADER]: store.traceId,
+          [PARENT_APP_HEADER]: agent.appName
+        };
+
+        if (typeof urlOrOptions === "string" || urlOrOptions instanceof URL) {
+          // request(url, options?, callback?)
+          let opts: Record<string, any>;
+          let cb: ((...args: any[]) => void) | undefined;
+          if (typeof optionsOrCallback === "function") {
+            opts = {};
+            cb = optionsOrCallback;
+          } else {
+            opts = { ...(optionsOrCallback ?? {}) };
+            cb = maybeCallback;
+          }
+          opts.headers = { ...((opts.headers as Record<string, any>) ?? {}), ...extraHeaders };
+          return (original as any)(urlOrOptions, opts, cb);
+        } else {
+          // request(options, callback?)
+          const opts = {
+            ...urlOrOptions,
+            headers: { ...((urlOrOptions.headers as Record<string, any>) ?? {}), ...extraHeaders }
+          };
+          const cb = typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback;
+          return (original as any)(opts, cb);
+        }
+      };
+    }
+
+    patch(http);
+    patch(https);
+    console.log("[SyncFlow] HTTP instrumentation enabled");
   }
 }
 

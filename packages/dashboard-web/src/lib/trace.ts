@@ -30,6 +30,9 @@ export function buildTraceGroup(traceId: string, evs: Event[]): TraceGroup {
     ordered.reduce((acc, x) => acc + (x.durationMs ?? 0), 0) ??
     undefined;
 
+  const distinctApps = new Set(ordered.map((e) => e.appName));
+  const isDistributed = distinctApps.size > 1;
+
   return {
     traceId,
     displayTraceId: traceId.startsWith("no-trace:") ? undefined : traceId,
@@ -42,7 +45,8 @@ export function buildTraceGroup(traceId: string, evs: Event[]): TraceGroup {
     statusCode,
     ok,
     hasError,
-    slow
+    slow,
+    isDistributed
   };
 }
 

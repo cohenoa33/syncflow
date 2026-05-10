@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import http from "node:http";
 import { SyncFlowAgent } from "@syncflow/agent-node";
 import dotenv from "dotenv";
 
@@ -29,6 +30,7 @@ const agent = new SyncFlowAgent({
 agent.connect();
 agent.instrumentExpress(app);
 agent.instrumentMongoose(mongoose);
+agent.instrumentHttp();
 
 
 // Define User model (now hooks will attach)
@@ -148,6 +150,27 @@ app.delete("/api/users/:id", async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Distributed trace demo: forward request to mern-sample-app-2
+app.get("/api/forward", (_req, res) => {
+  const APP2_URL = process.env.APP2_URL || "http://localhost:4001";
+  const parsed = new URL(`${APP2_URL}/api/users`);
+  const options = { hostname: parsed.hostname, port: parsed.port || 80, path: parsed.pathname };
+
+  const proxyReq = http.request(options, (upstream) => {
+    let body = "";
+    upstream.on("data", (chunk) => (body += chunk));
+    upstream.on("end", () => {
+      try {
+        res.json({ source: "mern-sample-app-2", data: JSON.parse(body) });
+      } catch {
+        res.status(502).json({ error: "Bad response from app-2", raw: body });
+      }
+    });
+  });
+  proxyReq.on("error", (err) => res.status(502).json({ error: err.message }));
+  proxyReq.end();
 });
 
 // Start server

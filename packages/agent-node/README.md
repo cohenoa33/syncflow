@@ -63,6 +63,7 @@ Done! The agent auto-captures all Express requests and Mongoose operations, stre
 
 - **Automatic Instrumentation** – Zero-config Express & Mongoose integration via middleware and schema plugins
 - **Trace Correlation** – Request tracing across HTTP and database layers with shared trace IDs
+- **Distributed Tracing** – Propagates trace context across service calls via `X-Syncflow-Trace-Id` headers; instrument outgoing HTTP with `agent.instrumentHttp()`
 - **Sensitive Data Redaction** – Auto-redacts passwords, tokens, API keys, and cookies before sending
 - **Real-Time Streaming** – WebSocket connection to dashboard for live request/query monitoring
 - **Built-in Sampling** – Configurable slow query thresholds to reduce noise (default: 500ms)
@@ -104,6 +105,7 @@ const agent = new SyncFlowAgent({
 - `agent.disconnect()` – Close connection
 - `agent.instrumentExpress(app)` – Capture HTTP requests
 - `agent.instrumentMongoose(mongoose)` – Capture DB operations (call before defining models)
+- `agent.instrumentHttp()` – Inject trace headers into all outgoing HTTP/HTTPS calls (enables distributed tracing)
 
 ---
 
@@ -129,6 +131,29 @@ Limits: Max 4 levels deep, 50 keys per object, 2000 chars per string.
 - Read: `find`, `findOne`
 - Write: `save`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`, `findOneAndUpdate`, `findOneAndDelete`
 
+**Distributed Tracing:**
+
+When Service A calls Service B, SyncFlow propagates the trace automatically:
+
+- **Incoming**: if an Express request carries an `X-Syncflow-Trace-Id` header, that traceId is reused instead of generating a new one. The upstream caller's `appName` is read from `X-Syncflow-Parent-App` and attached to the event.
+- **Outgoing**: after calling `agent.instrumentHttp()`, every `http.request` / `https.request` made inside a traced request context will automatically inject both headers. This covers most HTTP clients (axios, node-fetch v2, got) since they use Node's built-ins underneath.
+
+Minimal two-service example:
+
+```typescript
+// Service A (port 4000)
+agent.connect();
+agent.instrumentExpress(app);
+agent.instrumentHttp(); // enables outgoing header injection
+
+// Service B (port 4001)
+agent.connect();
+agent.instrumentExpress(app); // reads incoming headers automatically
+agent.instrumentHttp();
+```
+
+Both services will report their events under the same `traceId` in the dashboard.
+
 ---
 
 ## Troubleshooting
@@ -139,6 +164,7 @@ Limits: Max 4 levels deep, 50 keys per object, 2000 chars per string.
 | No events in dashboard  | Mongoose instrumented after models defined, or `agent.connect()` never called | Call `agent.instrumentMongoose()` BEFORE `mongoose.model()`, verify logs show `[SyncFlow] Connected to dashboard` |
 | Memory grows over time  | Large payloads in requests/responses                                          | Agent limits objects to 50 keys, strings to 2000 chars; check for exceptionally large payloads                    |
 | Module not found        | `@syncflow/agent-node` not installed                                          | Run `pnpm add @syncflow/agent-node`, verify `dist/index.d.ts` exists after build                                  |
+| Distributed traces are not linked | Two services show separate traces for the same request             | Call `agent.instrumentHttp()` on each service. Ensure both services point to the same dashboard. Check that intermediary proxies or load balancers don't strip custom headers. |
 
 ---
 
