@@ -424,9 +424,20 @@ export class SyncFlowAgent {
 
     const agent = this;
 
+    // Use require() to get the real mutable CJS module object.
+    // `import * as http` goes through TypeScript's __importStar which wraps every
+    // export in a non-writable, non-configurable getter — patching that wrapper
+    // throws on Node.js v22+. The underlying require() cache object is plain and
+    // remains mutable, and __importStar's getters forward reads to it, so callers
+    // using the import * namespace will automatically see the patched function.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const httpModule = require("node:http") as typeof http;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const httpsModule = require("node:https") as typeof https;
+
     function patch(mod: typeof http | typeof https): void {
       const original = mod.request.bind(mod) as typeof mod.request;
-      (mod.request as any) = function (
+      (mod as any).request = function (
         urlOrOptions: any,
         optionsOrCallback?: any,
         maybeCallback?: any
@@ -466,8 +477,8 @@ export class SyncFlowAgent {
       };
     }
 
-    patch(http);
-    patch(https);
+    patch(httpModule);
+    patch(httpsModule);
     console.log("[SyncFlow] HTTP instrumentation enabled");
   }
 }
