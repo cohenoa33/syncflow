@@ -10,6 +10,7 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 
 ### Monitoring & Search
 
+- 📈 **Historical Metrics** — error rate, p95/p50 latency, and request volume over 1h / 24h / 7d, with per-app filtering
 - 📊 **Live trace stream** from instrumented MERN apps via Socket.IO
 - 🧵 **Traces grouped by traceId** — visualize Express and Mongoose operations in a single timeline
 - 🔍 **Full-text search** across routes, DB operations, app names, and payload text
@@ -463,6 +464,61 @@ curl -X POST http://localhost:5050/api/insights/abc123/regenerate \
 ```
 
 **Response**: Same as GET.
+
+#### **Metrics**
+
+```http
+GET /api/metrics
+```
+
+Returns time-bucketed statistics for `express` events within the requested window.
+
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Query params**:
+
+| Param | Values | Default | Description |
+|-------|--------|---------|-------------|
+| `window` | `1h` \| `24h` \| `7d` | `24h` | Time window. Bucket sizes: 5 min / 1 hr / 6 hr |
+| `appName` | string | — | Filter to a single app (omit for all apps) |
+
+**Example:**
+
+```bash
+curl "http://localhost:5050/api/metrics?window=24h" \
+  -H "X-Tenant-Id: my-tenant" \
+  -H "Authorization: Bearer viewer-token"
+```
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "window": "24h",
+  "buckets": [
+    {
+      "ts": 1700000000000,
+      "total": 42,
+      "errors": 2,
+      "errorRate": 0.047,
+      "p50": 120,
+      "p95": 480,
+      "p99": 950,
+      "slowCount": 3
+    }
+  ],
+  "summary": {
+    "totalRequests": 1024,
+    "errorRate": 0.032,
+    "p95Latency": 450,
+    "slowRate": 0.08
+  },
+  "appName": null
+}
+```
+
+Returns `buckets: []` and zeroed summary when no data exists in the window.
 
 #### **Demo**
 

@@ -2,18 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
 
-import type { Agent, Event, InsightState, TraceGroup } from "./lib/types";
+import type { Agent, Event, InsightState, MetricsData, MetricsWindow, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
 import { groupEventsIntoTraces, buildTraceGroup } from "./lib/trace";
 import { buildInitialMaps } from "./lib/uiState";
 
+import { MetricsDashboard } from "./components/MetricsDashboard";
 import { ApplicationsCard } from "./components/ApplicationsCard";
 import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { PaginationBar } from "./components/PaginationBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
-import { authHeaders, demoHeaders, fetchDemoConfig } from "./lib/api";
+import { authHeaders, demoHeaders, fetchDemoConfig, fetchMetrics } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
@@ -80,6 +81,41 @@ function Dashboard() {
   const [showDemoToggle, setShowDemoToggle] = useState(false);
   const [requiresDemoToken, setRequiresDemoToken] = useState(false);
   const [hasTenantsConfig, setHasTenantsConfig] = useState(false);
+
+  // ----- View toggle -----
+  const [view, setView] = useState<"traces" | "metrics">("traces");
+
+  // ----- Metrics state -----
+  const [metricsData, setMetricsData] = useState<MetricsData | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>("24h");
+
+  // Single selected app for metrics filtering (null means all apps)
+  const metricsAppName = useMemo<string | null>(() => {
+    if (allAppsSelected) return null;
+    if (selectedApps.size === 1) return [...selectedApps][0];
+    return null;
+  }, [allAppsSelected, selectedApps]);
+
+  // Fetch metrics whenever the metrics view is active or its inputs change
+  useEffect(() => {
+    if (view !== "metrics") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setMetricsLoading(true);
+        setMetricsError(null);
+        const data = await fetchMetrics(metricsWindow, metricsAppName, authHeaders());
+        if (!cancelled) setMetricsData(data);
+      } catch (err) {
+        if (!cancelled) setMetricsError("Failed to load metrics");
+      } finally {
+        if (!cancelled) setMetricsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view, metricsWindow, metricsAppName]);
 
   const actionTitle = useMemo(() => {
     if (!actionError) return "";
@@ -766,6 +802,22 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {(["traces", "metrics"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      view === v
+                        ? "bg-indigo-600 text-white"
+                        : "bg-white text-gray-600 hover:bg-gray-100"
+                    }`}
+                  >
+                    {v === "traces" ? "Traces" : "Metrics"}
+                  </button>
+                ))}
+              </div>
+
               {showDemoToggle && (
                 <DemoModeToggle
                   onToggle={async (enabled) => {
@@ -810,87 +862,101 @@ function Dashboard() {
           onSelectAll={selectAllApps}
         />
 
-        <TypeFilterBar
-          filter={filter}
-          setFilter={(f) => { setFilter(f); setCurrentPage(0); }}
-          onClear={clearAll}
-          filterCounts={filterCounts}
-          demoMode={demoModeEnabled}
-        />
+        {view === "traces" && (
+          <>
+            <TypeFilterBar
+              filter={filter}
+              setFilter={(f) => { setFilter(f); setCurrentPage(0); }}
+              onClear={clearAll}
+              filterCounts={filterCounts}
+              demoMode={demoModeEnabled}
+            />
 
-        <SearchBar
-          query={query}
-          setQuery={setQuery}
-          showSlowOnly={showSlowOnly}
-          setShowSlowOnly={setShowSlowOnly}
-          showErrorsOnly={showErrorsOnly}
-          setShowErrorsOnly={setShowErrorsOnly}
-          onExportJson={exportTracesJson}
-          exportDisabled={filteredTraceGroups.length === 0}
-        />
+            <SearchBar
+              query={query}
+              setQuery={setQuery}
+              showSlowOnly={showSlowOnly}
+              setShowSlowOnly={setShowSlowOnly}
+              showErrorsOnly={showErrorsOnly}
+              setShowErrorsOnly={setShowErrorsOnly}
+              onExportJson={exportTracesJson}
+              exportDisabled={filteredTraceGroups.length === 0}
+            />
 
-        <PaginationBar
-          currentPage={currentPage}
-          totalGroups={filterCounts[filter]}
-          pageSize={pageSize}
-          pageSizeOptions={[25, 50, 100, 200]}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(0); }}
-        />
+            <PaginationBar
+              currentPage={currentPage}
+              totalGroups={filterCounts[filter]}
+              pageSize={pageSize}
+              pageSizeOptions={[25, 50, 100, 200]}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(0); }}
+            />
 
-        {actionError && (
-          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold">
-                  {actionTitle} (HTTP {actionError.status || "0"})
-                </div>
+            {actionError && (
+              <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">
+                      {actionTitle} (HTTP {actionError.status || "0"})
+                    </div>
 
-                <div className="text-xs text-rose-700 mt-1">
-                  {actionError.error ? `${actionError.error}: ` : ""}
-                  {actionError.message ?? "Request failed"}
-                </div>
+                    <div className="text-xs text-rose-700 mt-1">
+                      {actionError.error ? `${actionError.error}: ` : ""}
+                      {actionError.message ?? "Request failed"}
+                    </div>
 
-                {(actionError.status === 400 || actionError.status === 401) && (
-                  <div className="text-xs text-rose-700 mt-1">
-                    Check tenant id and dashboard key / demo token.
+                    {(actionError.status === 400 || actionError.status === 401) && (
+                      <div className="text-xs text-rose-700 mt-1">
+                        Check tenant id and dashboard key / demo token.
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <button
-                type="button"
-                onClick={() => setActionError(null)}
-                className="text-xs text-rose-700 hover:text-rose-900"
-                aria-label="Dismiss action error"
-                title="Dismiss"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => setActionError(null)}
+                    className="text-xs text-rose-700 hover:text-rose-900"
+                    aria-label="Dismiss action error"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <TraceList
+              loading={loadingHistory}
+              error={traceLoadError}
+              filteredTraceGroups={filteredTraceGroups}
+              openMap={openMap}
+              traceOpenMap={traceOpenMap}
+              copiedId={copiedId}
+              onToggleTrace={toggleTrace}
+              onTogglePayload={togglePayload}
+              onCopyPayload={copyPayload}
+              anyPayloadClosed={anyPayloadClosed}
+              onToggleAllPayloads={() =>
+                anyPayloadClosed ? expandAllPayloads() : collapseAllPayloads()
+              }
+              toggleInsight={toggleInsight}
+              insightStateMap={insightStateMap}
+              insightOpenMap={insightOpenMap}
+              setInsightOpenMap={setInsightOpenMap}
+              onRegenerateInsight={regenerateInsight}
+            />
+          </>
         )}
 
-        <TraceList
-          loading={loadingHistory}
-          error={traceLoadError}
-          filteredTraceGroups={filteredTraceGroups}
-          openMap={openMap}
-          traceOpenMap={traceOpenMap}
-          copiedId={copiedId}
-          onToggleTrace={toggleTrace}
-          onTogglePayload={togglePayload}
-          onCopyPayload={copyPayload}
-          anyPayloadClosed={anyPayloadClosed}
-          onToggleAllPayloads={() =>
-            anyPayloadClosed ? expandAllPayloads() : collapseAllPayloads()
-          }
-          toggleInsight={toggleInsight}
-          insightStateMap={insightStateMap}
-          insightOpenMap={insightOpenMap}
-          setInsightOpenMap={setInsightOpenMap}
-          onRegenerateInsight={regenerateInsight}
-        />
+        {view === "metrics" && (
+          <MetricsDashboard
+            data={metricsData}
+            loading={metricsLoading}
+            error={metricsError}
+            window={metricsWindow}
+            onWindowChange={setMetricsWindow}
+          />
+        )}
       </main>
     </div>
   );

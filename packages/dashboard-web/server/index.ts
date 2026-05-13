@@ -12,6 +12,7 @@ import { registerTracesRoutes } from "./routes/traces";
 import { registerDemoRoutes } from "./routes/demo";
 import { registerInsightsRoutes } from "./routes/insights";
 import { registerConfigRoutes } from "./routes/config";
+import { registerMetricsRoutes } from "./routes/metrics";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 import { getAuthConfig } from "./tenants";
@@ -55,6 +56,7 @@ async function main() {
   registerDemoRoutes(app, io);
   registerTracesRoutes(app, io);
   registerInsightsRoutes(app);
+  registerMetricsRoutes(app);
 
   serveStaticUi(app);
 

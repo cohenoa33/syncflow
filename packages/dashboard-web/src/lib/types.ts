@@ -33,6 +33,33 @@ export type TraceGroup = {
   hasError?: boolean;
   isDistributed?: boolean;
 };
+export type MetricsWindow = "1h" | "24h" | "7d";
+
+export type MetricsBucket = {
+  ts: number;
+  total: number;
+  errors: number;
+  errorRate: number;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  slowCount: number;
+};
+
+export type MetricsSummary = {
+  totalRequests: number;
+  errorRate: number;
+  p95Latency: number | null;
+  slowRate: number;
+};
+
+export type MetricsData = {
+  window: MetricsWindow;
+  buckets: MetricsBucket[];
+  summary: MetricsSummary;
+  appName: string | null;
+};
+
 export type RateLimitMeta = {
   remaining?: number;
   resetAt?: number;

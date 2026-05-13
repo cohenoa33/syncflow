@@ -294,6 +294,7 @@ Dashboard UI (React + Tailwind)
 - Search + filters: type (Express/Mongoose/Error), app, slow (>500ms), errors
 - Export traces as JSON
 - MongoDB persistence of all events
+- Historical metrics: error rate, latency percentiles, request volume with time-window selection
 
 **AI Insights** (optional, with OpenAI API):
 
@@ -373,7 +374,7 @@ Each package has its own detailed README:
 
 - Authentication and multi-tenant support
 - ✅ Distributed tracing for microservices
-- Historical metrics dashboards
+- ✅ Historical metrics dashboards
 - Alerting and notifications
 
 ## Deployment Notes

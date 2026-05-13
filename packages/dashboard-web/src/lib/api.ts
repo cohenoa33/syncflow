@@ -1,4 +1,5 @@
-import { TENANT_ID } from "./config";
+import { API_BASE, TENANT_ID } from "./config";
+import type { MetricsData, MetricsWindow } from "./types";
 
 export function authHeaders(): HeadersInit {
   const headers: Record<string, string> = {};
@@ -61,4 +62,17 @@ export async function fetchDemoConfig(): Promise<{
   );
   const data = await res.json();
   return { ...data, demoOnly: demoOnly };
+}
+
+export async function fetchMetrics(
+  metricsWindow: MetricsWindow,
+  appName: string | null,
+  headers: HeadersInit
+): Promise<MetricsData> {
+  const params = new URLSearchParams({ window: metricsWindow });
+  if (appName) params.set("appName", appName);
+  const res = await fetch(`${API_BASE}/api/metrics?${params}`, { headers });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json as any)?.error ?? "Failed to fetch metrics");
+  return json as MetricsData;
 }
