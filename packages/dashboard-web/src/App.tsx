@@ -68,6 +68,7 @@ function Dashboard() {
   const [expressGroups, setExpressGroups] = useState(0);
   const [mongooseGroups, setMongooseGroups] = useState(0);
   const [errorGroups, setErrorGroups] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
 
   const [insightOpenMap, setInsightOpenMap] = useState<Record<string, boolean>>(
     {}
@@ -149,15 +150,52 @@ function Dashboard() {
       setDemoModeEnabled(true);
     }
   }, [demoOnly]);
-  // ----- Reset to page 0 when search / slow / errorsOnly filters change -----
+  // Stable string encoding of the current app filter — avoids Set-reference
+  // instability from the "keep selection sane" effect triggering spurious
+  // refetches and page resets when app contents haven't actually changed.
+  const appsQueryParam = useMemo(() => {
+    if (allAppsSelected) return "";
+    if (selectedApps.size === 0) return "NONE";
+    return [...selectedApps].sort().join(",");
+  }, [allAppsSelected, selectedApps]);
+
+  // ----- Reset to page 0 when search / slow / errorsOnly changes -----
+  // App-selection page resets are handled directly in toggleApp / selectAllApps.
   const mountedRef = useRef(false);
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     setCurrentPage(0);
   }, [debouncedQuery, showSlowOnly, showErrorsOnly]);
 
-  // ----- Fetch history (re-runs on page / pageSize / filter / search change) -----
+  // ----- Reset filters when switching back to traces view -----
+  const prevViewRef = useRef<"traces" | "metrics">("traces");
   useEffect(() => {
+    if (view === "traces" && prevViewRef.current === "metrics") {
+      setFilter("all");
+      setQuery("");
+      setDebouncedQuery("");
+      setShowSlowOnly(false);
+      setShowErrorsOnly(false);
+      setCurrentPage(0);
+      setPageSize(25);
+    }
+    prevViewRef.current = view;
+  }, [view]);
+
+  // ----- Fetch history (re-runs on page / pageSize / filter / search / app change) -----
+  useEffect(() => {
+    // No apps selected at all → return empty immediately, no round-trip needed
+    if (appsQueryParam === "NONE") {
+      setEvents([]);
+      setTotalGroups(0);
+      setExpressGroups(0);
+      setMongooseGroups(0);
+      setErrorGroups(0);
+      setFilteredTotal(0);
+      setLoadingHistory(false);
+      return;
+    }
+
     const controller = new AbortController();
     (async () => {
       try {
@@ -171,6 +209,7 @@ function Dashboard() {
           ...(debouncedQuery ? { q: debouncedQuery } : {}),
           ...(showSlowOnly ? { slowOnly: "true" } : {}),
           ...(showErrorsOnly ? { errorsOnly: "true" } : {}),
+          ...(appsQueryParam ? { apps: appsQueryParam } : {}),
         });
         const res = await fetch(
           `${API_BASE}/api/traces?${params}`,
@@ -195,6 +234,7 @@ function Dashboard() {
         setExpressGroups(json.expressGroups ?? 0);
         setMongooseGroups(json.mongooseGroups ?? 0);
         setErrorGroups(json.errorGroups ?? 0);
+        setFilteredTotal(json.filteredTotal ?? 0);
 
         // Build known-types map so the socket handler can correctly
         // detect when an incoming event introduces a new type to a group.
@@ -222,7 +262,7 @@ function Dashboard() {
       }
     })();
     return () => controller.abort();
-  }, [currentPage, pageSize, filter, debouncedQuery, showSlowOnly, showErrorsOnly]);
+  }, [currentPage, pageSize, filter, debouncedQuery, showSlowOnly, showErrorsOnly, appsQueryParam]);
 
   // ----- Live socket (runs once) -----
   useEffect(() => {
@@ -276,6 +316,7 @@ function Dashboard() {
       setExpressGroups(0);
       setMongooseGroups(0);
       setErrorGroups(0);
+      setFilteredTotal(0);
       knownTypesRef.current = new Map();
       setCurrentPage(0);
       const { open, traceOpen } = buildInitialMaps(ordered);
@@ -338,6 +379,7 @@ function Dashboard() {
   }, [appOptions, allAppsSelected]);
 
   const toggleApp = (appName: string) => {
+    setCurrentPage(0);
     if (allAppsSelected) {
       const next = new Set(appOptions);
       next.delete(appName);
@@ -361,6 +403,7 @@ function Dashboard() {
   };
 
   const selectAllApps = () => {
+    setCurrentPage(0);
     setAllAppsSelected(true);
     setSelectedApps(new Set());
   };
@@ -885,7 +928,7 @@ function Dashboard() {
 
             <PaginationBar
               currentPage={currentPage}
-              totalGroups={filterCounts[filter]}
+              totalGroups={filteredTotal}
               pageSize={pageSize}
               pageSizeOptions={[25, 50, 100, 200]}
               onPageChange={setCurrentPage}

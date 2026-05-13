@@ -10,12 +10,12 @@ export function registerTracesRoutes(app: Express, io: Server) {
       const tenantId = (req as any).tenantId;
       const { hasTenantsConfig } = getAuthConfig();
 
-      // If TENANTS_JSON is empty, return empty array (no data to query)
+      // If TENANTS_JSON is empty, return empty result
       if (!hasTenantsConfig) {
         console.log(
           `[Dashboard] GET /api/traces: no TENANTS_JSON, returning [] (tenant: ${tenantId})`
         );
-        return res.json({ events: [], totalGroups: 0 });
+        return res.json({ events: [], totalGroups: 0, expressGroups: 0, mongooseGroups: 0, errorGroups: 0, filteredTotal: 0 });
       }
 
       const page = Math.max(0, parseInt(req.query.page as string) || 0);
@@ -25,14 +25,20 @@ export function registerTracesRoutes(app: Express, io: Server) {
       const slowOnly = req.query.slowOnly === "true";
       const errorsOnly = req.query.errorsOnly === "true";
 
+      // App filter — comma-separated list of app names passed by the UI
+      const appsParam = ((req.query.apps as string) || "").trim();
+      const appNames = appsParam ? appsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
+
       const typeMatch: Record<string, any> | null =
         filter === "express" ? { hasExpress: 1 }
         : filter === "mongoose" ? { hasMongoose: 1 }
         : filter === "error" ? { hasError: 1 }
         : null;
 
-      // Build pre-facet match for search / slow / errorsOnly.
-      // Applied after grouping so all four facet counts reflect these filters.
+      // Pre-filters for search / slow / errorsOnly — applied only inside the
+      // page and filteredTotal facet sub-pipelines so the button-label counts
+      // (total / expressCount / mongooseCount / errorCount) remain raw per-app
+      // totals unaffected by transient filters.
       const preFilters: any[] = [];
       if (q) {
         const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -47,6 +53,7 @@ export function registerTracesRoutes(app: Express, io: Server) {
       if (errorsOnly) preFilters.push({ hasError: 1 });
 
       const query: any = { tenantId };
+      if (appNames.length) query.appName = { $in: appNames };
 
       // Paginate by trace group: group events by traceId (using the event _id
       // as a fallback key for no-trace events), sort by most-recent group first,
@@ -82,18 +89,26 @@ export function registerTracesRoutes(app: Express, io: Server) {
           }
         },
         { $sort: { startedAt: -1 } },
-        ...(preFilters.length ? [{ $match: { $and: preFilters } }] : []),
         {
           $facet: {
+            // Raw counts for button labels — no search/slow/errors/type filter
             total: [{ $count: "count" }],
             expressCount: [{ $match: { hasExpress: 1 } }, { $count: "count" }],
             mongooseCount: [{ $match: { hasMongoose: 1 } }, { $count: "count" }],
             errorCount: [{ $match: { hasError: 1 } }, { $count: "count" }],
+            // Page results — preFilters + type filter applied
             page: [
+              ...(preFilters.length ? [{ $match: { $and: preFilters } }] : []),
               ...(typeMatch ? [{ $match: typeMatch }] : []),
               { $skip: page * pageSize },
               { $limit: pageSize },
               { $project: { eventIds: 1 } }
+            ],
+            // Filtered total for pagination — preFilters + type filter applied
+            filteredTotal: [
+              ...(preFilters.length ? [{ $match: { $and: preFilters } }] : []),
+              ...(typeMatch ? [{ $match: typeMatch }] : []),
+              { $count: "count" }
             ]
           }
         }
@@ -103,13 +118,14 @@ export function registerTracesRoutes(app: Express, io: Server) {
       const expressGroups: number = aggResult?.expressCount?.[0]?.count ?? 0;
       const mongooseGroups: number = aggResult?.mongooseCount?.[0]?.count ?? 0;
       const errorGroups: number = aggResult?.errorCount?.[0]?.count ?? 0;
+      const filteredTotal: number = aggResult?.filteredTotal?.[0]?.count ?? 0;
       const allEventIds = (aggResult?.page ?? []).flatMap((g: any) => g.eventIds);
 
       const events = allEventIds.length
         ? await EventModel.find({ _id: { $in: allEventIds } }).sort({ ts: 1 }).lean()
         : [];
 
-      res.json({ events, totalGroups, expressGroups, mongooseGroups, errorGroups });
+      res.json({ events, totalGroups, expressGroups, mongooseGroups, errorGroups, filteredTotal });
     } catch (err) {
       console.error("[Dashboard] GET /api/traces failed", err);
       res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
