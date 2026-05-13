@@ -107,7 +107,7 @@ function Dashboard() {
       try {
         setMetricsLoading(true);
         setMetricsError(null);
-        const data = await fetchMetrics(metricsWindow, metricsAppName, authHeaders());
+        const data = await fetchMetrics(metricsWindow, metricsAppName, authHeaders(), demoModeEnabled);
         if (!cancelled) setMetricsData(data);
       } catch (err) {
         if (!cancelled) setMetricsError("Failed to load metrics");
@@ -116,7 +116,7 @@ function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, [view, metricsWindow, metricsAppName]);
+  }, [view, metricsWindow, metricsAppName, demoModeEnabled]);
 
   const actionTitle = useMemo(() => {
     if (!actionError) return "";

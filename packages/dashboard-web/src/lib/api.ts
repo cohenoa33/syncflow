@@ -67,10 +67,12 @@ export async function fetchDemoConfig(): Promise<{
 export async function fetchMetrics(
   metricsWindow: MetricsWindow,
   appName: string | null,
-  headers: HeadersInit
+  headers: HeadersInit,
+  demo = false
 ): Promise<MetricsData> {
   const params = new URLSearchParams({ window: metricsWindow });
   if (appName) params.set("appName", appName);
+  if (demo) params.set("demo", "true");
   const res = await fetch(`${API_BASE}/api/metrics?${params}`, { headers });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((json as any)?.error ?? "Failed to fetch metrics");

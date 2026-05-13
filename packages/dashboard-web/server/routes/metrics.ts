@@ -33,17 +33,22 @@ export function registerMetricsRoutes(app: Express) {
         ? (windowParam as MetricsWindow)
         : "24h";
       const appName = ((req.query.appName as string) || "").trim() || null;
+      const demoMode = req.query.demo === "true";
 
       const { ms: windowMs, bucketMs } = WINDOW_CONFIG[window];
       const since = Date.now() - windowMs;
       const appFilter = appName ? { appName } : {};
 
-      // Fall back to demo data only when no real express events exist in the window
-      const realCount = await EventModel.countDocuments({
-        tenantId, type: "express", ts: { $gte: since }, source: { $ne: "demo" }, ...appFilter,
-      });
-
-      const sourceFilter: any = realCount === 0 ? { source: "demo" } : { source: { $ne: "demo" } };
+      let sourceFilter: any;
+      if (demoMode) {
+        sourceFilter = { source: "demo" };
+      } else {
+        // Fall back to demo data only when no real express events exist in the window
+        const realCount = await EventModel.countDocuments({
+          tenantId, type: "express", ts: { $gte: since }, source: { $ne: "demo" }, ...appFilter,
+        });
+        sourceFilter = realCount === 0 ? { source: "demo" } : { source: { $ne: "demo" } };
+      }
 
       const match: any = { tenantId, type: "express", ts: { $gte: since }, ...sourceFilter, ...appFilter };
 
