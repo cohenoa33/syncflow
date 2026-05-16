@@ -18,6 +18,64 @@ function percentile(sorted: number[], p: number): number | null {
 
 const EMPTY_SUMMARY = { totalRequests: 0, errorRate: 0, p95Latency: null as null, slowRate: 0 };
 
+export async function computeMetricsSummary(
+  tenantId: string,
+  window: "1h" | "24h" | "7d",
+  appName: string | null,
+  excludeDemo: boolean
+): Promise<{ totalRequests: number; errorRate: number; p95Latency: number | null; slowRate: number }> {
+  const { ms: windowMs, bucketMs } = WINDOW_CONFIG[window];
+  const since = Date.now() - windowMs;
+  const appFilter = appName ? { appName } : {};
+
+  let sourceFilter: any;
+  if (excludeDemo) {
+    sourceFilter = { source: { $ne: "demo" } };
+  } else {
+    sourceFilter = { source: "demo" };
+  }
+
+  const match: any = { tenantId, type: "express", ts: { $gte: since }, ...sourceFilter, ...appFilter };
+
+  const aggResult = await EventModel.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { $subtract: ["$ts", { $mod: ["$ts", bucketMs] }] },
+        total: { $sum: 1 },
+        errors: { $sum: { $cond: [{ $eq: ["$level", "error"] }, 1, 0] } },
+        durations: { $push: "$durationMs" },
+        slowCount: { $sum: { $cond: [{ $gt: ["$durationMs", 500] }, 1, 0] } },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  const allDurations: number[] = [];
+  let totalRequests = 0;
+  let totalErrors = 0;
+  let totalSlow = 0;
+
+  for (const b of aggResult) {
+    const durations: number[] = (b.durations as (number | null | undefined)[])
+      .filter((d): d is number => typeof d === "number");
+    durations.sort((a, c) => a - c);
+    allDurations.push(...durations);
+    totalRequests += b.total;
+    totalErrors += b.errors;
+    totalSlow += b.slowCount;
+  }
+
+  allDurations.sort((a, b) => a - b);
+
+  return {
+    totalRequests,
+    errorRate: totalRequests > 0 ? totalErrors / totalRequests : 0,
+    p95Latency: percentile(allDurations, 0.95),
+    slowRate: totalRequests > 0 ? totalSlow / totalRequests : 0,
+  };
+}
+
 export function registerMetricsRoutes(app: Express) {
   app.get("/api/metrics", async (req, res) => {
     try {

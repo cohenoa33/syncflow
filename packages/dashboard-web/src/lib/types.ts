@@ -65,6 +65,46 @@ export type RateLimitMeta = {
   resetAt?: number;
 };
 
+export type AlertMetric = "errorRate" | "p95Latency" | "slowRate" | "requestVolume";
+export type AlertWindow = "1h" | "24h" | "7d";
+
+export type AlertRule = {
+  _id: string;
+  tenantId: string;
+  name: string;
+  metric: AlertMetric;
+  threshold: number;
+  window: AlertWindow;
+  appName: string | null;
+  enabled: boolean;
+  cooldownMs: number;
+  lastFiredAt?: number;
+  createdAt: number;
+};
+
+export type AlertFire = {
+  _id: string;
+  ruleId: string;
+  ruleName: string;
+  metric: AlertMetric;
+  value: number;
+  threshold: number;
+  window: AlertWindow;
+  appName: string | null;
+  firedAt: number;
+};
+
+export type InAppAlertNotification = {
+  ruleId: string;
+  ruleName: string;
+  metric: AlertMetric;
+  value: number;
+  threshold: number;
+  window: AlertWindow;
+  appName: string | null;
+  firedAt: number;
+};
+
 export type InsightState =
   | { status: "idle" }
   | { status: "loading" }

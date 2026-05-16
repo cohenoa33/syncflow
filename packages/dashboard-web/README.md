@@ -29,6 +29,15 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 - 🚦 **Rate limiting** — configurable max requests per time window
 - 🚫 **Graceful degradation** — clear error codes (INSIGHT_SAMPLED_OUT, AI_RATE_LIMITED, etc.)
 
+### Alerting
+
+- 🚨 **Threshold-based alert rules** — error rate, p95 latency, slow rate, request volume
+- 🔔 **Real-time in-app toast notifications** via Socket.IO (top-right corner, auto-dismiss after 8s)
+- 📋 **Alert history log** — last 50 fired alerts per tenant
+- ⏱️ **Per-rule cooldown** to prevent notification spam (default: 1 hour)
+- 🔇 **Enable/disable rules** without deleting them
+- ⚙️ **Configurable evaluation schedule** via `ALERT_EVAL_CRON` (default: every 5 minutes)
+
 ### UX
 
 - 🎨 **Modern Tailwind CSS v4** responsive design
@@ -155,6 +164,10 @@ To see real traces from instrumented apps, configure `TENANTS_JSON` and matching
 - `AI_INSIGHT_SAMPLE_RATE` — Default: `1` (generate all)
 - `AI_INSIGHT_SAMPLE_ERRORS_ONLY` — Default: `false`
 - `AI_RATE_LIMIT_MAX`, `AI_RATE_LIMIT_WINDOW_MS` — Defaults: `20`, `60000`
+
+**Alerting**:
+
+- `ALERT_EVAL_CRON` — Cron expression for alert evaluation. Default: `*/5 * * * *` (every 5 minutes)
 
 ⚠️ Never commit `.env.local` or API keys.
 
@@ -519,6 +532,68 @@ curl "http://localhost:5050/api/metrics?window=24h" \
 ```
 
 Returns `buckets: []` and zeroed summary when no data exists in the window.
+
+#### **Alerts**
+
+```http
+GET /api/alerts/rules
+```
+
+List all alert rules for the current tenant, sorted by creation date descending.
+
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Response**: `{ "ok": true, "rules": [...] }`
+
+```http
+POST /api/alerts/rules
+```
+
+Create a new alert rule.
+
+**Body**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string (1–100 chars) | ✅ | Human-readable label |
+| `metric` | `"errorRate"` \| `"p95Latency"` \| `"slowRate"` \| `"requestVolume"` | ✅ | Metric to watch |
+| `threshold` | number (> 0) | ✅ | Trigger when metric exceeds this value |
+| `window` | `"1h"` \| `"24h"` \| `"7d"` | — | Evaluation window (default: `"1h"`) |
+| `appName` | string \| null | — | Scope to one app; null = all apps (default: `null`) |
+| `enabled` | boolean | — | Whether rule is active (default: `true`) |
+| `cooldownMs` | integer (> 0) | — | Min ms between repeated fires (default: `3600000`) |
+
+**Response**: `{ "ok": true, "rule": {...} }` or `400 { "ok": false, "error": "VALIDATION_ERROR", "issues": [...] }`
+
+```http
+PUT /api/alerts/rules/:id
+```
+
+Update any fields of an existing rule (partial update). Returns 404 if not found or belongs to another tenant.
+
+**Response**: `{ "ok": true, "rule": {...} }`
+
+```http
+DELETE /api/alerts/rules/:id
+```
+
+Delete a rule. Returns 404 if not found or belongs to another tenant.
+
+**Response**: `{ "ok": true }`
+
+```http
+GET /api/alerts/history
+```
+
+Last 50 fired alerts, sorted newest first.
+
+**Query params**:
+
+| Param | Description |
+|-------|-------------|
+| `ruleId` | (optional) Filter to fires from a specific rule |
+
+**Response**: `{ "ok": true, "history": [...] }`
 
 #### **Demo**
 

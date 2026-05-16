@@ -337,7 +337,7 @@ Each package has its own detailed README:
 
 **Agent:** Express/Mongoose auto-instrumentation, trace correlation, event levels, sensitive data redaction
 
-**Dashboard:** Real-time Socket.IO streaming, trace grouping, search/filters, JSON export, MongoDB persistence, AI insights with caching and regeneration, rate limiting, multi-tenant support
+**Dashboard:** Real-time Socket.IO streaming, trace grouping, search/filters, JSON export, MongoDB persistence, AI insights with caching and regeneration, rate limiting, multi-tenant support, threshold-based alerting with real-time in-app notifications
 
 ---
 
@@ -375,7 +375,7 @@ Each package has its own detailed README:
 - Authentication and multi-tenant support
 - ✅ Distributed tracing for microservices
 - ✅ Historical metrics dashboards
-- Alerting and notifications
+- ✅ Alerting and notifications
 
 ## Deployment Notes
 

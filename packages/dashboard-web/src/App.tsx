@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
 
-import type { Agent, Event, InsightState, MetricsData, MetricsWindow, TraceGroup } from "./lib/types";
+import type { Agent, AlertFire, AlertRule, Event, InAppAlertNotification, InsightState, MetricsData, MetricsWindow, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
 import { groupEventsIntoTraces, buildTraceGroup } from "./lib/trace";
 import { buildInitialMaps } from "./lib/uiState";
 
 import { MetricsDashboard } from "./components/MetricsDashboard";
+import { AlertsPanel } from "./components/AlertsPanel";
 import { ApplicationsCard } from "./components/ApplicationsCard";
 import { TypeFilterBar } from "./components/TypeFilterBar";
 import { TraceList } from "./components/TraceList";
@@ -21,6 +22,57 @@ import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
 import { seedDemoData } from "./lib/seedDemoData";
 
 type KnownGroupTypes = { hasExpress: boolean; hasMongoose: boolean; hasError: boolean };
+
+const METRIC_LABEL: Record<string, string> = {
+  errorRate: "error rate",
+  p95Latency: "p95 latency",
+  slowRate: "slow rate",
+  requestVolume: "request volume",
+};
+
+function formatAlertValue(metric: string, value: number): string {
+  if (metric === "errorRate" || metric === "slowRate") return `${value.toFixed(1)}%`;
+  if (metric === "p95Latency") return `${value.toFixed(0)}ms`;
+  return String(value);
+}
+
+function formatAlertThreshold(metric: string, threshold: number): string {
+  if (metric === "errorRate" || metric === "slowRate") return `${threshold}%`;
+  if (metric === "p95Latency") return `${threshold}ms`;
+  return String(threshold);
+}
+
+function AlertToast({
+  notification: n,
+  onDismiss,
+}: {
+  notification: import("./lib/types").InAppAlertNotification;
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div className="flex items-start gap-3 bg-white border-l-4 border-red-500 rounded-lg shadow-lg px-4 py-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900">🚨 {n.ruleName}</p>
+        <p className="text-xs text-gray-600 mt-0.5">
+          {METRIC_LABEL[n.metric] ?? n.metric} reached {formatAlertValue(n.metric, n.value)}{" "}
+          (threshold: {formatAlertThreshold(n.metric, n.threshold)})
+        </p>
+      </div>
+      <button
+        onClick={onDismiss}
+        className="text-gray-400 hover:text-gray-600 text-sm leading-none shrink-0 mt-0.5"
+        aria-label="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -84,13 +136,19 @@ function Dashboard() {
   const [hasTenantsConfig, setHasTenantsConfig] = useState(false);
 
   // ----- View toggle -----
-  const [view, setView] = useState<"traces" | "metrics">("traces");
+  const [view, setView] = useState<"traces" | "metrics" | "alerts">("traces");
 
   // ----- Metrics state -----
   const [metricsData, setMetricsData] = useState<MetricsData | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>("24h");
+
+  // ----- Alerts state -----
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [alertHistory, setAlertHistory] = useState<AlertFire[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [activeAlerts, setActiveAlerts] = useState<InAppAlertNotification[]>([]);
 
   // Single selected app for metrics filtering (null means all apps)
   const metricsAppName = useMemo<string | null>(() => {
@@ -117,6 +175,29 @@ function Dashboard() {
     })();
     return () => { cancelled = true; };
   }, [view, metricsWindow, metricsAppName, demoModeEnabled]);
+
+  const fetchAlerts = async () => {
+    try {
+      setAlertsLoading(true);
+      const [rulesRes, historyRes] = await Promise.all([
+        fetch(`${API_BASE}/api/alerts/rules`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/alerts/history`, { headers: authHeaders() }),
+      ]);
+      const rulesJson = await rulesRes.json().catch(() => ({}));
+      const historyJson = await historyRes.json().catch(() => ({}));
+      if (rulesRes.ok) setAlertRules(rulesJson.rules ?? []);
+      if (historyRes.ok) setAlertHistory(historyJson.history ?? []);
+    } catch {
+      // silent — alerts panel shows empty state
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view !== "alerts") return;
+    fetchAlerts();
+  }, [view]);
 
   const actionTitle = useMemo(() => {
     if (!actionError) return "";
@@ -168,9 +249,9 @@ function Dashboard() {
   }, [debouncedQuery, showSlowOnly, showErrorsOnly]);
 
   // ----- Reset filters when switching back to traces view -----
-  const prevViewRef = useRef<"traces" | "metrics">("traces");
+  const prevViewRef = useRef<"traces" | "metrics" | "alerts">("traces");
   useEffect(() => {
-    if (view === "traces" && prevViewRef.current === "metrics") {
+    if (view === "traces" && prevViewRef.current !== "traces") {
       setFilter("all");
       setQuery("");
       setDebouncedQuery("");
@@ -326,6 +407,10 @@ function Dashboard() {
 
     socket.on("auth_error", (e) => console.error("[socket auth_error]", e));
 
+    socket.on("alert_fired", (n: InAppAlertNotification) => {
+      setActiveAlerts((prev) => [n, ...prev].slice(0, 5));
+    });
+
     return () => {
       socket.off("connect");
       socket.off("disconnect");
@@ -333,6 +418,7 @@ function Dashboard() {
       socket.off("event");
       socket.off("eventHistory");
       socket.off("auth_error");
+      socket.off("alert_fired");
       socket.close();
     };
   }, []);
@@ -846,7 +932,7 @@ function Dashboard() {
 
             <div className="flex items-center gap-4">
               <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                {(["traces", "metrics"] as const).map((v) => (
+                {(["traces", "metrics", "alerts"] as const).map((v) => (
                   <button
                     key={v}
                     onClick={() => setView(v)}
@@ -856,7 +942,7 @@ function Dashboard() {
                         : "bg-white text-gray-600 hover:bg-gray-100"
                     }`}
                   >
-                    {v === "traces" ? "Traces" : "Metrics"}
+                    {v === "traces" ? "Traces" : v === "metrics" ? "Metrics" : "Alerts"}
                   </button>
                 ))}
               </div>
@@ -1000,7 +1086,52 @@ function Dashboard() {
             onWindowChange={setMetricsWindow}
           />
         )}
+
+        {view === "alerts" && (
+          <AlertsPanel
+            rules={alertRules}
+            history={alertHistory}
+            loading={alertsLoading}
+            onCreateRule={async (rule) => {
+              const res = await fetch(`${API_BASE}/api/alerts/rules`, {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify(rule),
+              });
+              if (!res.ok) throw new Error("Failed to create rule");
+              await fetchAlerts();
+            }}
+            onToggleRule={async (id, enabled) => {
+              await fetch(`${API_BASE}/api/alerts/rules/${id}`, {
+                method: "PUT",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled }),
+              });
+              await fetchAlerts();
+            }}
+            onDeleteRule={async (id) => {
+              await fetch(`${API_BASE}/api/alerts/rules/${id}`, {
+                method: "DELETE",
+                headers: authHeaders(),
+              });
+              await fetchAlerts();
+            }}
+          />
+        )}
       </main>
+
+      {/* Toast notifications — fixed top-right, visible on all views */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
+        {activeAlerts.map((n, i) => (
+          <AlertToast
+            key={`${n.ruleId}-${n.firedAt}-${i}`}
+            notification={n}
+            onDismiss={() =>
+              setActiveAlerts((prev) => prev.filter((_, idx) => idx !== i))
+            }
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -13,6 +13,8 @@ import { registerDemoRoutes } from "./routes/demo";
 import { registerInsightsRoutes } from "./routes/insights";
 import { registerConfigRoutes } from "./routes/config";
 import { registerMetricsRoutes } from "./routes/metrics";
+import { registerAlertsRoutes } from "./routes/alerts";
+import { startAlertEvaluator } from "./alerts/evaluator";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 import { getAuthConfig } from "./tenants";
@@ -57,6 +59,9 @@ async function main() {
   registerTracesRoutes(app, io);
   registerInsightsRoutes(app);
   registerMetricsRoutes(app);
+  registerAlertsRoutes(app, io);
+
+  startAlertEvaluator(io);
 
   serveStaticUi(app);
 

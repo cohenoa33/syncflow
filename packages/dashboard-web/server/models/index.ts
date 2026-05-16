@@ -42,3 +42,41 @@ InsightSchema.index({ tenantId: 1, traceId: 1 }, { unique: true });
 
 export const EventModel = mongoose.model("SyncFlowEvent", EventSchema);
 export const InsightModel = mongoose.model("SyncFlowInsight", InsightSchema);
+
+const AlertRuleSchema = new mongoose.Schema(
+  {
+    tenantId:    { type: String, required: true, index: true },
+    name:        { type: String, required: true },
+    metric:      { type: String, required: true },
+    threshold:   { type: Number, required: true },
+    window:      { type: String, required: true, default: "1h" },
+    appName:     { type: String, default: null },
+    enabled:     { type: Boolean, required: true, default: true },
+    cooldownMs:  { type: Number, default: 3_600_000 },
+    lastFiredAt: { type: Number, default: null },
+    createdAt:   { type: Number, required: true },
+  },
+  { collection: "alertrules" }
+);
+AlertRuleSchema.index({ tenantId: 1 });
+AlertRuleSchema.index({ tenantId: 1, enabled: 1 });
+
+const AlertFireSchema = new mongoose.Schema(
+  {
+    tenantId:  { type: String, required: true, index: true },
+    ruleId:    { type: String, required: true, index: true },
+    ruleName:  { type: String, required: true },
+    metric:    { type: String, required: true },
+    value:     { type: Number, required: true },
+    threshold: { type: Number, required: true },
+    window:    { type: String, required: true },
+    appName:   { type: String, default: null },
+    firedAt:   { type: Number, required: true, index: true },
+  },
+  { collection: "alertfires" }
+);
+AlertFireSchema.index({ tenantId: 1, firedAt: -1 });
+AlertFireSchema.index({ tenantId: 1, ruleId: 1, firedAt: -1 });
+
+export const AlertRuleModel = mongoose.model("AlertRule", AlertRuleSchema);
+export const AlertFireModel = mongoose.model("AlertFire", AlertFireSchema);
