@@ -607,6 +607,16 @@ Paginated list of fired alerts, sorted newest first.
 
 > Alert fires older than 7 days are automatically deleted by a daily cleanup cron (runs at 02:00).
 
+```http
+POST /api/alerts/evaluate
+```
+
+Manually trigger an immediate evaluation of all enabled alert rules for the current tenant, without waiting for the next cron tick. Useful for testing rules or forcing a check after a spike.
+
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
+
+**Response**: `{ "ok": true, "results": [{ "ruleId": "...", "ruleName": "...", "status": "fired" | "skipped" | "error", "reason": "...", "value": 14.3 }, ...] }`
+
 #### **Demo**
 
 ```http
