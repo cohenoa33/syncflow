@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import type { AlertFire, AlertMetric, AlertRule } from "../lib/types";
+import { API_BASE } from "../lib/config";
+import { authHeaders } from "../lib/api";
 
 type Props = {
   rules: AlertRule[];
-  history: AlertFire[];
   loading: boolean;
+  alertFiredTrigger: number;
   onCreateRule: (rule: Omit<AlertRule, "_id" | "tenantId" | "createdAt" | "lastFiredAt">) => Promise<void>;
   onToggleRule: (id: string, enabled: boolean) => Promise<void>;
   onDeleteRule: (id: string) => Promise<void>;
@@ -57,11 +59,22 @@ const EMPTY_FORM = {
   enabled: true,
 };
 
-export function AlertsPanel({ rules, history, loading, onCreateRule, onToggleRule, onDeleteRule }: Props) {
+const PAGE_SIZE = 25;
+
+export function AlertsPanel({ rules, loading, alertFiredTrigger, onCreateRule, onToggleRule, onDeleteRule }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // History state
+  const [historyItems, setHistoryItems] = useState<AlertFire[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [metricFilter, setMetricFilter] = useState<AlertMetric | "">("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [debouncedName, setDebouncedName] = useState("");
 
   useEffect(() => {
     if (!confirmDelete) return;
@@ -69,6 +82,49 @@ export function AlertsPanel({ rules, history, loading, onCreateRule, onToggleRul
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [confirmDelete]);
+
+  // Debounce name filter
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedName(nameFilter), 250);
+    return () => clearTimeout(t);
+  }, [nameFilter]);
+
+  // Reset to page 0 when filters or a new alert fire changes
+  useEffect(() => {
+    setHistoryPage(0);
+  }, [metricFilter, debouncedName, alertFiredTrigger]);
+
+  // Fetch history
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setHistoryLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(historyPage),
+          pageSize: String(PAGE_SIZE),
+        });
+        if (metricFilter) params.set("metric", metricFilter);
+        if (debouncedName.trim()) params.set("q", debouncedName.trim());
+
+        const res = await fetch(`${API_BASE}/api/alerts/history?${params}`, {
+          headers: authHeaders(),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setHistoryItems(json.history ?? []);
+          setHistoryTotal(json.total ?? 0);
+        }
+      } catch {
+        // silent — history section shows empty state
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [historyPage, metricFilter, debouncedName, alertFiredTrigger]);
+
+  const totalPages = Math.max(1, Math.ceil(historyTotal / PAGE_SIZE));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,23 +343,59 @@ export function AlertsPanel({ rules, history, loading, onCreateRule, onToggleRul
 
       {/* Alert History */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-base font-semibold text-gray-800">Alert History</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="text"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              placeholder="Filter by name…"
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-40"
+            />
+            <select
+              value={metricFilter}
+              onChange={(e) => {
+                setMetricFilter(e.target.value as AlertMetric | "");
+                setHistoryPage(0);
+              }}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="">All metrics</option>
+              <option value="errorRate">Error Rate</option>
+              <option value="p95Latency">p95 Latency</option>
+              <option value="slowRate">Slow Rate</option>
+              <option value="requestVolume">Request Volume</option>
+            </select>
+            {(nameFilter || metricFilter) && (
+              <button
+                onClick={() => { setNameFilter(""); setMetricFilter(""); setHistoryPage(0); }}
+                className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
-        {loading ? (
+        {historyLoading ? (
           <div className="px-5 py-6 text-sm text-gray-400">Loading history…</div>
-        ) : history.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-gray-400">No alerts have fired yet.</div>
+        ) : historyItems.length === 0 ? (
+          <div className="px-5 py-6 text-sm text-gray-400">
+            {nameFilter || metricFilter ? "No alerts match your filters." : "No alerts have fired yet."}
+          </div>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {history.map((fire) => (
+            {historyItems.map((fire) => (
               <li key={fire._id} className="px-5 py-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-gray-800 text-sm">{fire.ruleName}</span>
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
                       {fire.window}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                      {METRIC_LABELS[fire.metric]}
                     </span>
                     {fire.appName && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
@@ -320,6 +412,32 @@ export function AlertsPanel({ rules, history, loading, onCreateRule, onToggleRul
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Pagination */}
+        {historyTotal > 0 && (
+          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-4">
+            <span className="text-xs text-gray-500">{historyTotal} total</span>
+            <div className="flex items-center gap-3">
+              <button
+                disabled={historyPage === 0}
+                onClick={() => setHistoryPage((p) => p - 1)}
+                className="px-3 py-1 rounded-lg border border-gray-200 text-xs text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                ← Previous
+              </button>
+              <span className="text-xs text-gray-500">
+                Page {historyPage + 1} of {totalPages}
+              </span>
+              <button
+                disabled={historyPage >= totalPages - 1}
+                onClick={() => setHistoryPage((p) => p + 1)}
+                className="px-3 py-1 rounded-lg border border-gray-200 text-xs text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE, SOCKET_URL, TENANT_ID } from "./lib/config";
 
-import type { Agent, AlertFire, AlertRule, Event, InAppAlertNotification, InsightState, MetricsData, MetricsWindow, TraceGroup } from "./lib/types";
+import type { Agent, AlertRule, Event, InAppAlertNotification, InsightState, MetricsData, MetricsWindow, TraceGroup } from "./lib/types";
 import { buildAppOptions } from "./lib/apps";
 import { groupEventsIntoTraces, buildTraceGroup } from "./lib/trace";
 import { buildInitialMaps } from "./lib/uiState";
@@ -49,10 +49,13 @@ function AlertToast({
   notification: import("./lib/types").InAppAlertNotification;
   onDismiss: () => void;
 }) {
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
   useEffect(() => {
-    const t = setTimeout(onDismiss, 8000);
+    const t = setTimeout(() => onDismissRef.current(), 8000);
     return () => clearTimeout(t);
-  }, [onDismiss]);
+  }, []); // run once on mount — timer must not reset on re-renders
 
   return (
     <div className="flex items-start gap-3 bg-white border-l-4 border-red-500 rounded-lg shadow-lg px-4 py-3">
@@ -146,9 +149,9 @@ function Dashboard() {
 
   // ----- Alerts state -----
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
-  const [alertHistory, setAlertHistory] = useState<AlertFire[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [activeAlerts, setActiveAlerts] = useState<InAppAlertNotification[]>([]);
+  const [alertFiredTrigger, setAlertFiredTrigger] = useState(0);
 
   // Single selected app for metrics filtering (null means all apps)
   const metricsAppName = useMemo<string | null>(() => {
@@ -179,14 +182,9 @@ function Dashboard() {
   const fetchAlerts = async () => {
     try {
       setAlertsLoading(true);
-      const [rulesRes, historyRes] = await Promise.all([
-        fetch(`${API_BASE}/api/alerts/rules`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/api/alerts/history`, { headers: authHeaders() }),
-      ]);
-      const rulesJson = await rulesRes.json().catch(() => ({}));
-      const historyJson = await historyRes.json().catch(() => ({}));
-      if (rulesRes.ok) setAlertRules(rulesJson.rules ?? []);
-      if (historyRes.ok) setAlertHistory(historyJson.history ?? []);
+      const res = await fetch(`${API_BASE}/api/alerts/rules`, { headers: authHeaders() });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setAlertRules(json.rules ?? []);
     } catch {
       // silent — alerts panel shows empty state
     } finally {
@@ -409,6 +407,7 @@ function Dashboard() {
 
     socket.on("alert_fired", (n: InAppAlertNotification) => {
       setActiveAlerts((prev) => [n, ...prev].slice(0, 5));
+      setAlertFiredTrigger((c) => c + 1);
     });
 
     return () => {
@@ -1090,8 +1089,8 @@ function Dashboard() {
         {view === "alerts" && (
           <AlertsPanel
             rules={alertRules}
-            history={alertHistory}
             loading={alertsLoading}
+            alertFiredTrigger={alertFiredTrigger}
             onCreateRule={async (rule) => {
               const res = await fetch(`${API_BASE}/api/alerts/rules`, {
                 method: "POST",
@@ -1127,7 +1126,7 @@ function Dashboard() {
             key={`${n.ruleId}-${n.firedAt}-${i}`}
             notification={n}
             onDismiss={() =>
-              setActiveAlerts((prev) => prev.filter((_, idx) => idx !== i))
+              setActiveAlerts((prev) => prev.filter((x) => x !== n))
             }
           />
         ))}

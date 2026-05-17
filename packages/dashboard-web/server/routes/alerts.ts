@@ -106,12 +106,22 @@ export function registerAlertsRoutes(app: Express, io: Server): void {
 
       const filter: any = { tenantId };
       if (req.query.ruleId) filter.ruleId = req.query.ruleId as string;
+      if (req.query.metric) filter.metric = req.query.metric as string;
+      if (req.query.q) filter.ruleName = { $regex: req.query.q, $options: "i" };
 
-      const history = await AlertFireModel.find(filter)
-        .sort({ firedAt: -1 })
-        .limit(50)
-        .lean();
-      res.json({ ok: true, history });
+      const page = Math.max(0, parseInt((req.query.page as string) || "0", 10));
+      const pageSize = Math.min(100, Math.max(1, parseInt((req.query.pageSize as string) || "25", 10)));
+
+      const [total, history] = await Promise.all([
+        AlertFireModel.countDocuments(filter),
+        AlertFireModel.find(filter)
+          .sort({ firedAt: -1 })
+          .skip(page * pageSize)
+          .limit(pageSize)
+          .lean(),
+      ]);
+
+      res.json({ ok: true, history, total, page, pageSize });
     } catch (err) {
       console.error("[Alerts] GET /api/alerts/history failed", err);
       res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });

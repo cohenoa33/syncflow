@@ -15,6 +15,7 @@ import { registerConfigRoutes } from "./routes/config";
 import { registerMetricsRoutes } from "./routes/metrics";
 import { registerAlertsRoutes } from "./routes/alerts";
 import { startAlertEvaluator } from "./alerts/evaluator";
+import { startAlertCleanup } from "./alerts/cleanup";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 import { getAuthConfig } from "./tenants";
@@ -62,6 +63,7 @@ async function main() {
   registerAlertsRoutes(app, io);
 
   startAlertEvaluator(io);
+  startAlertCleanup();
 
   serveStaticUi(app);
 

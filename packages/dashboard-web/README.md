@@ -33,10 +33,13 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 
 - 🚨 **Threshold-based alert rules** — error rate, p95 latency, slow rate, request volume
 - 🔔 **Real-time in-app toast notifications** via Socket.IO (top-right corner, auto-dismiss after 8s)
-- 📋 **Alert history log** — last 50 fired alerts per tenant
+- 📋 **Paginated alert history** — 25 rows per page, next/previous navigation, total count
+- 🔍 **Filter history** by metric type and rule name (live substring search with debounce)
+- 🗑️ **Automatic 7-day history cleanup** — daily cron deletes alert fires older than 7 days
 - ⏱️ **Per-rule cooldown** to prevent notification spam (default: 1 hour)
 - 🔇 **Enable/disable rules** without deleting them
 - ⚙️ **Configurable evaluation schedule** via `ALERT_EVAL_CRON` (default: every 5 minutes)
+- 🎭 **Demo-data fallback** — alert evaluator falls back to demo traffic when no real events exist in the window
 
 ### UX
 
@@ -319,10 +322,11 @@ pnpm start
 ### Backend (`server/`)
 
 - **index.ts**: Express + Socket.IO server
-- **routes/**: REST endpoints (`/api/traces`, `/api/insights`, `/api/demo-seed`)
+- **routes/**: REST endpoints (`/api/traces`, `/api/insights`, `/api/metrics`, `/api/alerts`, `/api/demo-seed`)
 - **socket.ts**: Real-time event broadcast and agent registry
 - **insights/**: OpenAI integration with sampling & rate limiting
-- **models/**: MongoDB schemas (EventModel, InsightModel)
+- **alerts/**: Alert rule evaluator (cron, every 5 min) and daily history cleanup cron
+- **models/**: MongoDB schemas (EventModel, InsightModel, AlertRuleModel, AlertFireModel)
 
 ### Data Flow
 
@@ -585,15 +589,23 @@ Delete a rule. Returns 404 if not found or belongs to another tenant.
 GET /api/alerts/history
 ```
 
-Last 50 fired alerts, sorted newest first.
+Paginated list of fired alerts, sorted newest first.
+
+**Headers**: `X-Tenant-Id` (required), `Authorization: Bearer <viewer-token>` (when `TENANTS_JSON` is configured)
 
 **Query params**:
 
-| Param | Description |
-|-------|-------------|
-| `ruleId` | (optional) Filter to fires from a specific rule |
+| Param | Default | Description |
+|-------|---------|-------------|
+| `page` | `0` | 0-indexed page number |
+| `pageSize` | `25` | Rows per page (max 100) |
+| `metric` | — | Filter by metric: `errorRate`, `p95Latency`, `slowRate`, `requestVolume` |
+| `q` | — | Case-insensitive substring match on rule name |
+| `ruleId` | — | Filter to fires from a specific rule |
 
-**Response**: `{ "ok": true, "history": [...] }`
+**Response**: `{ "ok": true, "history": [...], "total": 142, "page": 0, "pageSize": 25 }`
+
+> Alert fires older than 7 days are automatically deleted by a daily cleanup cron (runs at 02:00).
 
 #### **Demo**
 
@@ -658,6 +670,7 @@ curl -X POST http://localhost:5050/api/demo-seed \
 - `event(Event)` — New event from instrumented app
 - `agents(Agent[])` — List of connected agents
 - `eventHistory(Event[])` — Full event history (on clear)
+- `alert_fired(InAppAlertNotification)` — Emitted to the tenant room when an alert rule fires; triggers an in-app toast and refreshes the history list
 
 ---
 

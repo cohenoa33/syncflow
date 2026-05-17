@@ -295,6 +295,7 @@ Dashboard UI (React + Tailwind)
 - Export traces as JSON
 - MongoDB persistence of all events
 - Historical metrics: error rate, latency percentiles, request volume with time-window selection
+- Threshold-based alert rules (error rate, p95 latency, slow rate, request volume) with real-time toast notifications, paginated + filterable history (by metric and name), 7-day auto-cleanup, and per-rule cooldown
 
 **AI Insights** (optional, with OpenAI API):
 

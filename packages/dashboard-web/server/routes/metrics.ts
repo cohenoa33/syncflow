@@ -30,7 +30,11 @@ export async function computeMetricsSummary(
 
   let sourceFilter: any;
   if (excludeDemo) {
-    sourceFilter = { source: { $ne: "demo" } };
+    // Prefer real traffic; fall back to demo data when no real events exist in the window
+    const realCount = await EventModel.countDocuments({
+      tenantId, type: "express", ts: { $gte: since }, source: { $ne: "demo" }, ...appFilter,
+    });
+    sourceFilter = realCount === 0 ? { source: "demo" } : { source: { $ne: "demo" } };
   } else {
     sourceFilter = { source: "demo" };
   }

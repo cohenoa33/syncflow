@@ -65,7 +65,7 @@ async function evaluateRule(io: Server, rule: any): Promise<RuleResult> {
   );
 
   if (summary.totalRequests === 0) {
-    return { ...base, status: "skipped", reason: `no real traffic in ${rule.window} window (tip: evaluator excludes demo data)` };
+    return { ...base, status: "skipped", reason: `no traffic in ${rule.window} window` };
   }
 
   let metricValue: number;
