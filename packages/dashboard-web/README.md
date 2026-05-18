@@ -157,7 +157,7 @@ To see real traces from instrumented apps, configure `TENANTS_JSON` and matching
 
 **AI Insights** (optional):
 
-- `ENABLE_AI_INSIGHTS` — Default: `true`
+- `ENABLE_AI_INSIGHTS` — Default: `false` (set to `true` to enable; requires OPENAI_API_KEY)
 - `OPENAI_API_KEY` — Required if insights enabled
 - `INSIGHT_MODEL` — Default: `gpt-5.2`
 - `INSIGHT_TIMEOUT_MS`, `INSIGHT_RETRIES` — Defaults: `12000`, `2`

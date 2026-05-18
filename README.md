@@ -117,7 +117,7 @@ Create `packages/dashboard-web/.env.local`:
 | `PORT`                   | No       | `5050`                                         | Dashboard server                            |
 | `CORS_ALLOWED_ORIGINS`   | No       | `http://localhost:5173`                        | Comma-separated allowed origins. Set to your production URL(s) in prod. |
 | `OPENAI_API_KEY`         | No       | —                                              | Required for AI Insights                    |
-| `ENABLE_AI_INSIGHTS`     | No       | `true`                                         | Disable to use heuristic analysis           |
+| `ENABLE_AI_INSIGHTS`     | No       | `false`                                        | Set to `true` to enable AI insights (requires OPENAI_API_KEY) |
 | `INSIGHT_MODEL`          | No       | `gpt-4o-mini`                                  | OpenAI model to use                         |
 | `VITE_API_BASE`          | No       | `http://localhost:5050`                        | Frontend API endpoint                       |
 | `VITE_SOCKET_URL`        | No       | `http://localhost:5050`                        | Frontend WebSocket endpoint                 |
