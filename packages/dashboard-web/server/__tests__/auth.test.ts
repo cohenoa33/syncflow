@@ -338,7 +338,7 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
         .set("X-Tenant-Id", "any-tenant");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body.events).toEqual([]);
     });
 
     it("should return 401 when tenant is unknown (TENANTS_JSON present)", async () => {
@@ -422,7 +422,7 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
         .set("Authorization", "Bearer viewer-a");
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.events)).toBe(true);
     });
   });
 
@@ -1717,9 +1717,9 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-a");
 
     expect(resA.status).toBe(200);
-    expect(resA.body.length).toBe(1);
-    expect(resA.body[0].tenantId).toBe("tenant-a");
-    expect(resA.body[0].id).toBe("event-a");
+    expect(resA.body.events.length).toBe(1);
+    expect(resA.body.events[0].tenantId).toBe("tenant-a");
+    expect(resA.body.events[0].id).toBe("event-a");
 
     // Tenant B should only see their events
     const resB = await request(app)
@@ -1728,9 +1728,9 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-b");
 
     expect(resB.status).toBe(200);
-    expect(resB.body.length).toBe(1);
-    expect(resB.body[0].tenantId).toBe("tenant-b");
-    expect(resB.body[0].id).toBe("event-b");
+    expect(resB.body.events.length).toBe(1);
+    expect(resB.body.events[0].tenantId).toBe("tenant-b");
+    expect(resB.body.events[0].id).toBe("event-b");
   });
 
   it("should never leak events from tenant A to tenant B via Socket.IO", async () => {
@@ -1871,8 +1871,8 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-a");
 
     expect(resA.status).toBe(200);
-    const realEventsA = resA.body.filter((e: any) => e.source !== "demo");
-    const demoEventsA = resA.body.filter((e: any) => e.source === "demo");
+    const realEventsA = resA.body.events.filter((e: any) => e.source !== "demo");
+    const demoEventsA = resA.body.events.filter((e: any) => e.source === "demo");
 
     expect(realEventsA.length).toBeGreaterThan(0);
     expect(demoEventsA.length).toBeGreaterThan(0);
@@ -1885,7 +1885,7 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-b");
 
     expect(resB.status).toBe(200);
-    expect(resB.body.length).toBe(0); // No events for tenant-b
+    expect(resB.body.events.length).toBe(0); // No events for tenant-b
 
     // Delete demo data for tenant-a
     await request(app)
@@ -1901,10 +1901,10 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-a");
 
     expect(resAfterDelete.status).toBe(200);
-    const realEventsAfter = resAfterDelete.body.filter(
+    const realEventsAfter = resAfterDelete.body.events.filter(
       (e: any) => e.source !== "demo"
     );
-    const demoEventsAfter = resAfterDelete.body.filter(
+    const demoEventsAfter = resAfterDelete.body.events.filter(
       (e: any) => e.source === "demo"
     );
 
@@ -1942,9 +1942,9 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
       .set("Authorization", "Bearer viewer-a");
 
     expect(res.status).toBe(200);
-    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.events.length).toBeGreaterThan(0);
 
-    res.body.forEach((event: any) => {
+    res.body.events.forEach((event: any) => {
       expect(event.source).toBe("demo");
       expect(event.tenantId).toBe("tenant-a");
     });

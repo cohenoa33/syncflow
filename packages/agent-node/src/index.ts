@@ -64,7 +64,7 @@ function redactValue(_key: string, value: any) {
  * - prevents huge payloads
  * - avoids circulars
  */
-function sanitize(input: any, maxDepth = 4, maxKeys = 50): any {
+export function sanitize(input: any, maxDepth = 4, maxKeys = 50): any {
   const seen = new WeakSet();
 
   function walk(v: any, depth: number): any {
@@ -109,7 +109,7 @@ function sanitize(input: any, maxDepth = 4, maxKeys = 50): any {
 }
 
 /** best-effort size guard */
-function limitString(s: string, maxLen = 2000) {
+export function limitString(s: string, maxLen = 2000) {
   if (s.length <= maxLen) return s;
   return s.slice(0, maxLen) + "…[truncated]";
 }

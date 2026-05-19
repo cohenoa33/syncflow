@@ -197,11 +197,18 @@ TypeScript strict mode is enabled in `tsconfig.json`. All code must:
 
 ### Testing
 
-This package has no automated tests. Before publishing:
+Run the test suite with:
 
-1. Verify builds: `npm run build`
-2. Check types: `npx tsc --noEmit`
-3. Test manually in an example app (if available in monorepo)
+```bash
+pnpm test
+```
+
+Tests cover: `sanitize` (redaction, depth limits, circular refs), `limitString`, `instrumentExpress` (event shape, slow/fast levels, header redaction, 4xx capture), `instrumentMongoose` (operation + modelName), and distributed tracing (header injection and inheritance).
+
+Before publishing also verify:
+
+1. Builds: `npm run build`
+2. Types: `npx tsc --noEmit`
 
 ---
 

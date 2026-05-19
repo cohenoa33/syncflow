@@ -98,12 +98,6 @@ importers:
 
   packages/agent-node:
     dependencies:
-      express:
-        specifier: ^4.18.0
-        version: 4.22.1
-      mongoose:
-        specifier: ^8.0.0
-        version: 8.20.1(socks@2.8.7)
       socket.io-client:
         specifier: ^4.7.2
         version: 4.8.1
@@ -111,15 +105,36 @@ importers:
         specifier: 8.3.2
         version: 8.3.2
     devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
       '@types/node':
         specifier: ^20.19.25
         version: 20.19.25
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
       '@types/uuid':
         specifier: ^8.3.4
         version: 8.3.4
+      express:
+        specifier: ^4.18.0
+        version: 4.22.1
+      mongodb-memory-server:
+        specifier: ^9.1.5
+        version: 9.5.0
+      mongoose:
+        specifier: ^8.0.0
+        version: 8.20.1(socks@2.8.7)
+      supertest:
+        specifier: ^6.3.3
+        version: 6.3.4
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
+      vitest:
+        specifier: ^1.2.0
+        version: 1.6.1(@types/node@20.19.25)(lightningcss@1.30.2)
 
   packages/dashboard-web:
     dependencies:

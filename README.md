@@ -336,9 +336,11 @@ Each package has its own detailed README:
 
 ## ✅ What's Implemented
 
-**Agent:** Express/Mongoose auto-instrumentation, trace correlation, event levels, sensitive data redaction
+**Agent:** Express/Mongoose auto-instrumentation, trace correlation, event levels, sensitive data redaction, distributed tracing header propagation
 
-**Dashboard:** Real-time Socket.IO streaming, trace grouping, search/filters, JSON export, MongoDB persistence, AI insights with caching and regeneration, rate limiting, multi-tenant support, threshold-based alerting with real-time in-app notifications
+**Dashboard:** Real-time Socket.IO streaming, trace grouping, search/filters, JSON export, MongoDB persistence, AI insights with caching and regeneration, rate limiting, multi-tenant auth and tenant isolation, threshold-based alerting with real-time in-app notifications, historical metrics
+
+**Tests:** 132 passing — auth contract (HTTP + Socket.IO), alert evaluator, metrics bucketing, heuristic insights, rate limiting, sampling, agent instrumentation, and distributed tracing
 
 ---
 
@@ -371,9 +373,9 @@ Each package has its own detailed README:
 - Better model/tooling prompts & structured output validation
 - Rate limiting + sampling for production safety (implemented)
 
-### 🚧 Phase 4: Production Ready
+### ✅ Phase 4: Production Ready
 
-- Authentication and multi-tenant support
+- ✅ Authentication and multi-tenant support
 - ✅ Distributed tracing for microservices
 - ✅ Historical metrics dashboards
 - ✅ Alerting and notifications

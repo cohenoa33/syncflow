@@ -305,7 +305,15 @@ pnpm preview
 
 # Run production server (compiled)
 pnpm start
+
+# Run tests (vitest)
+pnpm test
+
+# Run tests in watch mode
+pnpm test:watch
 ```
+
+Tests live in `server/__tests__/` and cover: auth contract (HTTP + Socket.IO), alert evaluator and cooldown logic, metrics bucketing and percentiles, heuristic insight generation, AI rate limiting, and sampling.
 
 ---
 
