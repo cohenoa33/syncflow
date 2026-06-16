@@ -664,7 +664,7 @@ curl -X POST http://localhost:5050/api/demo-seed \
 ```json
 {
   "ok": true,
-  "count": 15,
+  "count": 6,
   "traceIdsByApp": { "demo-my-tenant-app": [...] },
   "tenantId": "my-tenant"
 }
@@ -689,6 +689,7 @@ curl -X POST http://localhost:5050/api/demo-seed \
 - `agents(Agent[])` — List of connected agents
 - `eventHistory(Event[])` — Full event history (on clear)
 - `alert_fired(InAppAlertNotification)` — Emitted to the tenant room when an alert rule fires; triggers an in-app toast and refreshes the history list
+- `auth_error({ ok: false, error })` — Emitted to a socket when its handshake/registration fails (e.g. `MISSING_TENANT_ID`, `MISSING_APP_NAME`, `UNAUTHORIZED`)
 
 ---
 
