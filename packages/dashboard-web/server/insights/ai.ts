@@ -131,7 +131,7 @@ export async function buildAIInsightForTrace(
   traceId: string,
   events: TraceEvent[]
 ): Promise<Insight> {
-  const INSIGHT_MODEL = process.env.INSIGHT_MODEL || "gpt-5.2";
+  const INSIGHT_MODEL = process.env.INSIGHT_MODEL || "gpt-4o-mini";
 
   const openai = getOpenAI();
   const ordered = [...events].sort((a, b) => a.ts - b.ts);
@@ -144,7 +144,6 @@ export async function buildAIInsightForTrace(
 
   const user = { traceId, appName, headerOp, events: traceSummary };
 
-  const start = Date.now();
   const timeoutMs = Number(process.env.INSIGHT_TIMEOUT_MS || 12_000);
 
   let resp;
