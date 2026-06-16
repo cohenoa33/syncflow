@@ -208,13 +208,6 @@ export class SyncFlowAgent {
       ...event
     };
 
-    console.log(
-      "[SyncFlow emit]",
-      fullEvent.type,
-      fullEvent.operation,
-      fullEvent.traceId
-    );
-
     this.socket.emit("event", fullEvent);
   }
 

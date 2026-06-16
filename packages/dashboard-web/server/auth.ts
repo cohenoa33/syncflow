@@ -57,9 +57,6 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
 
   // Step 2: If no TENANTS_JSON configured, allow request through (routes decide data availability)
   if (!hasTenantsConfig) {
-    console.log(
-      `[Dashboard] ⚠️  No TENANTS_JSON configured, allowing tenant "${tenantFromHeader}" through`
-    );
     (req as any).tenantId = tenantFromHeader;
     return next();
   }
@@ -113,9 +110,6 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
   }
 
   // All validations passed
-  console.log(
-    `[Dashboard] ✅ Auth success: Valid token for tenant "${tenantFromHeader}"`
-  );
   (req as any).tenantId = tenantFromHeader;
   return next();
 }

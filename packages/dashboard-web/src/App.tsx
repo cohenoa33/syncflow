@@ -15,11 +15,11 @@ import { TraceList } from "./components/TraceList";
 import { SearchBar } from "./components/SearchBar";
 import { PaginationBar } from "./components/PaginationBar";
 import { parseRateLimitHeaders } from "./lib/rateLimit";
-import { authHeaders, demoHeaders, fetchDemoConfig, fetchMetrics } from "./lib/api";
+import { authHeaders, fetchDemoConfig, fetchMetrics } from "./lib/api";
 import { DemoPage } from "./pages/DemoPage";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { getDemoMode, getDemoAppNames } from "./lib/demoMode";
-import { seedDemoData } from "./lib/seedDemoData";
+import { seedDemoData, type DemoSeedError } from "./lib/seedDemoData";
 
 type KnownGroupTypes = { hasExpress: boolean; hasMongoose: boolean; hasError: boolean };
 
@@ -119,6 +119,9 @@ function Dashboard() {
 
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
+  // Bumped to force a fresh, authoritative reload of the paginated trace
+  // history (and its filter counts) without changing any other query input.
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [totalGroups, setTotalGroups] = useState(0);
   const [expressGroups, setExpressGroups] = useState(0);
   const [mongooseGroups, setMongooseGroups] = useState(0);
@@ -289,6 +292,7 @@ function Dashboard() {
           ...(showSlowOnly ? { slowOnly: "true" } : {}),
           ...(showErrorsOnly ? { errorsOnly: "true" } : {}),
           ...(appsQueryParam ? { apps: appsQueryParam } : {}),
+          demo: demoModeEnabled ? "true" : "false",
         });
         const res = await fetch(
           `${API_BASE}/api/traces?${params}`,
@@ -341,7 +345,7 @@ function Dashboard() {
       }
     })();
     return () => controller.abort();
-  }, [currentPage, pageSize, filter, debouncedQuery, showSlowOnly, showErrorsOnly, appsQueryParam]);
+  }, [currentPage, pageSize, filter, debouncedQuery, showSlowOnly, showErrorsOnly, appsQueryParam, reloadNonce, demoModeEnabled]);
 
   // ----- Live socket (runs once) -----
   useEffect(() => {
@@ -670,22 +674,31 @@ function Dashboard() {
   };
 
   const clearAll = async () => {
-    const msg = demoModeEnabled ? "Replace & Generate" : "Clear";
-
     try {
       setActionError(null);
-      const options = demoModeEnabled
-        ? {
-            endpoint: "/api/demo-seed",
-            headers: demoHeaders({ requiresDemoToken, hasTenantsConfig })
-          }
-        : { endpoint: "/api/traces", headers: authHeaders() };
 
-      const { headers, endpoint } = options;
+      if (demoModeEnabled) {
+        // "Replace & Generate": regenerate fresh demo traces.
+        //
+        // POST /api/demo-seed already deletes this tenant's existing demo
+        // events before seeding, so there is no need for a separate DELETE.
+        // Skipping the DELETE also avoids its `eventHistory` socket broadcast
+        // (which contains only non-demo events) racing with — and clobbering —
+        // the freshly seeded demo traces in the live socket handler. That race
+        // was why the list emptied without showing the new events in prod.
+        await seedDemoData(TENANT_ID, requiresDemoToken, hasTenantsConfig);
 
-      const res = await fetch(`${API_BASE}${endpoint}`, {
+        // Reload the authoritative paginated history so the filter button
+        // counts reflect the newly generated demo traces.
+        setCurrentPage(0);
+        setReloadNonce((n) => n + 1);
+        return;
+      }
+
+      // "Clear": delete all real (non-demo) traces for this tenant.
+      const res = await fetch(`${API_BASE}/api/traces`, {
         method: "DELETE",
-        headers
+        headers: authHeaders()
       });
 
       if (!res.ok) {
@@ -693,35 +706,32 @@ function Dashboard() {
         setActionError({
           status: res.status,
           error: (json as any)?.error,
-          message:
-            (json as any)?.message ?? `Failed to ${msg.toLowerCase()} traces`,
+          message: (json as any)?.message ?? "Failed to clear traces",
           context: "clearAll"
         });
         return;
       }
 
-      if (demoModeEnabled) {
-
-        const { ordered, initialOpen, initialTraceOpen } = await seedDemoData(
-          TENANT_ID,
-          requiresDemoToken,
-          hasTenantsConfig
-        );
-        setEvents(ordered);
-        setOpenMap(initialOpen);
-        setTraceOpenMap(initialTraceOpen);
-      } else {
-        setEvents((prev) => prev.filter((e) => e.source === "demo"));
-        setOpenMap({});
-        setTraceOpenMap({});
-      }
+      setEvents((prev) => prev.filter((e) => e.source === "demo"));
+      setOpenMap({});
+      setTraceOpenMap({});
     } catch (err) {
       console.error("[Dashboard] clear traces failed", err);
-      setActionError({
-        status: 0,
-        message: "Request failed",
-        context: "clearAll"
-      });
+      if (err && typeof err === "object" && "status" in err) {
+        const e = err as DemoSeedError;
+        setActionError({
+          status: e.status,
+          error: e.error,
+          message: e.message ?? "Request failed",
+          context: "clearAll"
+        });
+      } else {
+        setActionError({
+          status: 0,
+          message: "Request failed",
+          context: "clearAll"
+        });
+      }
     }
   };
 

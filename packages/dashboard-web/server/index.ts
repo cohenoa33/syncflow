@@ -19,6 +19,7 @@ import { startAlertCleanup } from "./alerts/cleanup";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
 import { getAuthConfig } from "./tenants";
+import { corsOriginCallback } from "./utils/cors";
 
 async function main() {
   // Initialize and log auth configuration at startup
@@ -30,16 +31,10 @@ async function main() {
   });
 
   const app = express();
-  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
-    : ["http://localhost:5173"];
 
   app.use(
     cors({
-      origin: (origin, cb) => {
-        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-        cb(new Error(`CORS: origin "${origin}" not allowed`));
-      },
+      origin: corsOriginCallback,
       exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
     })
   );

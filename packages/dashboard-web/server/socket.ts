@@ -7,16 +7,14 @@ import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
 import { APP_INDEX, TENANTS, getAuthConfig } from "./tenants";
 import { validateDashboardViewerToken } from "./auth";
+import { corsOriginCallback } from "./utils/cors";
 
 export function attachSocketServer(httpServer: HttpServer) {
   console.log("[Socket] Attaching Socket.IO server...");
-  const allowedOrigins = (
-    process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173"
-  ).split(",").map((s) => s.trim()).filter(Boolean);
 
   const io = new Server(httpServer, {
     cors: {
-      origin: allowedOrigins,
+      origin: corsOriginCallback,
       methods: ["GET", "POST"],
       exposedHeaders: ["X-RateLimit-Remaining", "X-RateLimit-Reset"]
     }
@@ -45,8 +43,6 @@ export function attachSocketServer(httpServer: HttpServer) {
     }
 
     // This is a UI client - enforce UI auth rules
-    console.log("[Dashboard] UI handshake auth", socket.id);
-
     // Extract tenantId from handshake.auth or handshake.query
     const tenantId =
       (typeof socket.handshake.auth?.tenantId === "string"
@@ -116,15 +112,6 @@ export function attachSocketServer(httpServer: HttpServer) {
         };
         return next(err);
       }
-
-      console.log(
-        `[Dashboard] ✅ Handshake success: Valid token for tenant "${tenantId}"`
-      );
-    } else {
-      // Viewer auth disabled (TENANTS_JSON empty) - allow with just tenantId
-      console.log(
-        `[Dashboard] ⚠️  No viewer auth required, allowing tenant "${tenantId}" through`
-      );
     }
 
     // Set tenantId and uiAuthenticated on successful UI handshake auth
@@ -147,17 +134,8 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.data.registered = false;
       socket.data.appName = undefined as string | undefined;
     }
-    console.log(
-      "[Dashboard] Client connected:",
-      socket.id,
-      socket.data.uiAuthenticated
-        ? `(UI pre-authenticated for tenant: ${socket.data.tenantId})`
-        : "- awaiting register or join_tenant..."
-    );
 
     socket.on("register", (data) => {
-      console.log("[Socket] register", socket.id, "appName:", data?.appName);
-
       const { hasTenantsConfig, requireAgentAuth } = getAuthConfig();
       const appName = data?.appName;
       const token = data?.token;
@@ -296,12 +274,6 @@ export function attachSocketServer(httpServer: HttpServer) {
 
       eventsBuffer.push(evt);
       if (eventsBuffer.length > 1000) eventsBuffer.shift();
-      console.log("[Dashboard] saving event", {
-        tenantId: evt.tenantId,
-        appName: evt.appName,
-        type: evt.type,
-        traceId: evt.traceId
-      });
 
       // Persist to database (non-blocking)
       EventModel.create(evt).catch((err) => {
@@ -335,17 +307,11 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.data.registered = false;
       socket.data.appName = undefined;
       socket.data.tenantId = undefined;
-      console.log("[Dashboard] Client disconnected:", socket.id);
     });
 
     socket.on("join_tenant", (data) => {
       // If client already authenticated during handshake, this is idempotent
       if (socket.data.uiAuthenticated && socket.data.tenantId) {
-        console.log(
-          "[Dashboard] join_tenant called for pre-authenticated client:",
-          socket.data.tenantId,
-          socket.id
-        );
         // Emit agents list (client already in room)
         socket.emit(
           "agents",
@@ -388,10 +354,6 @@ export function attachSocketServer(httpServer: HttpServer) {
       // Step B: If requireViewerAuth === false (TENANTS_JSON empty)
       // Allow join without token, emit agents payload
       if (!requireViewerAuth) {
-        console.log(
-          `[Dashboard] ⚠️  No viewer auth required, allowing tenant "${tenantId}" through`
-        );
-
         // Leave any existing tenant rooms to ensure single-tenant membership
         const rooms = Array.from(socket.rooms);
         rooms.forEach((room) => {
@@ -410,8 +372,6 @@ export function attachSocketServer(httpServer: HttpServer) {
             (a) => a.tenantId === tenantId
           )
         );
-
-        console.log("[Dashboard] UI joined tenant room:", tenantId, socket.id);
         return;
       }
 
@@ -467,10 +427,6 @@ export function attachSocketServer(httpServer: HttpServer) {
       }
 
       // All validations passed
-      console.log(
-        `[Dashboard] ✅ join_tenant success: Valid token for tenant "${tenantId}"`
-      );
-
       // Leave any existing tenant rooms to ensure single-tenant membership
       const rooms = Array.from(socket.rooms);
       rooms.forEach((room) => {
@@ -488,8 +444,6 @@ export function attachSocketServer(httpServer: HttpServer) {
           (a) => a.tenantId === tenantId
         )
       );
-
-      console.log("[Dashboard] UI joined tenant room:", tenantId, socket.id);
     });
   });
 

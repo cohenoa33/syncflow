@@ -12,9 +12,6 @@ export function registerTracesRoutes(app: Express, io: Server) {
 
       // If TENANTS_JSON is empty, return empty result
       if (!hasTenantsConfig) {
-        console.log(
-          `[Dashboard] GET /api/traces: no TENANTS_JSON, returning [] (tenant: ${tenantId})`
-        );
         return res.json({ events: [], totalGroups: 0, expressGroups: 0, mongooseGroups: 0, errorGroups: 0, filteredTotal: 0 });
       }
 
@@ -28,6 +25,13 @@ export function registerTracesRoutes(app: Express, io: Server) {
       // App filter — comma-separated list of app names passed by the UI
       const appsParam = ((req.query.apps as string) || "").trim();
       const appNames = appsParam ? appsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+      // Demo filter — the dashboard shows demo and real traffic separately, so
+      // the group counts (and page events) must be scoped to the active mode.
+      // Without this, the button-label totals mix demo + real and don't change
+      // when toggling demo mode. The param is tri-state: "true" → demo only,
+      // "false" → real only, absent → no source filter (back-compat).
+      const demoParam = req.query.demo;
 
       const typeMatch: Record<string, any> | null =
         filter === "express" ? { hasExpress: 1 }
@@ -54,6 +58,8 @@ export function registerTracesRoutes(app: Express, io: Server) {
 
       const query: any = { tenantId };
       if (appNames.length) query.appName = { $in: appNames };
+      if (demoParam === "true") query.source = "demo";
+      else if (demoParam === "false") query.source = { $ne: "demo" };
 
       // Paginate by trace group: group events by traceId (using the event _id
       // as a fallback key for no-trace events), sort by most-recent group first,
