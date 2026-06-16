@@ -10,7 +10,7 @@ Dashboard: https://syncflow-demo.onrender.com/
 
 ## 🚀 Quick Start
 
-**Prerequisites:** Node.js 18+, pnpm, MongoDB 6+, OpenAI API key (optional)
+**Prerequisites:** pnpm, MongoDB 6+, OpenAI API key (optional)
 
 **Terminal 1: Start MongoDB (Docker)**
 

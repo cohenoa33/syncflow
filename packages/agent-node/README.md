@@ -14,7 +14,7 @@ npm install @syncflow/agent-node
 pnpm add @syncflow/agent-node
 ```
 
-Requires Node.js 16+ and peer dependencies:
+Requires the following peer dependencies:
 
 ```bash
 pnpm add express mongoose

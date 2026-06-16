@@ -56,7 +56,7 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 
 ### Prerequisites
 
-- **Node.js** 18+, **pnpm** (monorepo package manager)
+- **pnpm** (monorepo package manager)
 - **MongoDB** running: `brew services start mongodb-community` (macOS) or `docker run -d -p 27017:27017 mongo:latest`
 
 ### Setup & Run
@@ -159,7 +159,7 @@ To see real traces from instrumented apps, configure `TENANTS_JSON` and matching
 
 - `ENABLE_AI_INSIGHTS` — Default: `false` (set to `true` to enable; requires OPENAI_API_KEY)
 - `OPENAI_API_KEY` — Required if insights enabled
-- `INSIGHT_MODEL` — Default: `gpt-5.2`
+- `INSIGHT_MODEL` — Default: `gpt-4o-mini`
 - `INSIGHT_TIMEOUT_MS`, `INSIGHT_RETRIES` — Defaults: `12000`, `2`
 
 **Sampling & Rate Limiting**:
@@ -341,7 +341,7 @@ Tests live in `server/__tests__/` and cover: auth contract (HTTP + Socket.IO), a
 1. **Agent connects** → Socket.IO registration → added to agent list
 2. **Agent sends event** → broadcast to all dashboards via Socket.IO + persisted to MongoDB
 3. **User clicks insight** → API fetches cached insight or generates new one (respecting sampling & rate limits)
-4. **Load Demo Data** → clears DB and seeds 4 sample traces with realistic data
+4. **Load Demo Data** → clears existing demo traces and seeds ~5–6 realistic events (a handful of correlated traces) per app
 
 **Key defaults**:
 
@@ -782,7 +782,6 @@ VITE_DEMO_MODE_TOKEN=demo-secret-key
 ## 📝 Notes
 
 - MongoDB must run before dashboard starts
-- Node.js 18+ required
 - pnpm is the monorepo package manager
 - OPENAI_API_KEY optional (insights gracefully skip if missing)
 - Full-stack design: UI + API server in one package for simplicity
