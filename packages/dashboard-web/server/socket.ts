@@ -5,7 +5,7 @@ import type { Server as HttpServer } from "http";
 import { EventModel } from "./models";
 import { eventsBuffer, connectedAgents } from "./state";
 import { randId } from "./utils/ids";
-import { APP_INDEX, TENANTS, getAuthConfig } from "./tenants";
+import { TENANTS, getAgentToken, getAuthConfig } from "./tenants";
 import { validateDashboardViewerToken } from "./auth";
 import { corsOriginCallback } from "./utils/cors";
 
@@ -161,18 +161,40 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
       if (requireAgentAuth) {
-        const rec = APP_INDEX[appName]; // { tenantId, token }
-        const expected = rec?.token;
+        // The agent must name the tenant it belongs to. App names are unique
+        // only within a tenant, so resolving by app name alone would let one
+        // tenant's app name select another tenant's registration.
+        const claimedTenantId = data?.tenantId?.trim();
 
+        if (!claimedTenantId) {
+          console.warn(
+            "[Dashboard] Missing tenantId in agent payload:",
+            socket.id,
+            appName
+          );
+          socket.emit("auth_error", { ok: false, error: "MISSING_TENANT_ID" });
+          socket.disconnect(true);
+          return;
+        }
+
+        const expected = getAgentToken(claimedTenantId, appName);
+
+        // Unknown tenant, tenant without this app, and wrong token are all
+        // reported identically so the response cannot be used to enumerate
+        // which tenants or app names exist.
         if (!expected || token !== expected) {
-          console.warn("[Dashboard] Unauthorized agent:", socket.id, appName);
+          console.warn(
+            "[Dashboard] Unauthorized agent:",
+            socket.id,
+            `${claimedTenantId}/${appName}`
+          );
           socket.emit("auth_error", { ok: false, error: "UNAUTHORIZED" });
           socket.disconnect(true);
           return;
         }
 
-        // Derive tenantId from APP_INDEX, ignore any tenantId sent by agent
-        socket.data.tenantId = rec.tenantId;
+        // Safe: the token was validated against this exact tenant's app map.
+        socket.data.tenantId = claimedTenantId;
       } else {
         const tenantId = data?.tenantId?.trim();
         if (!tenantId) {

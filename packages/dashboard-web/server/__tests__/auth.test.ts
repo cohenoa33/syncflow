@@ -1553,7 +1553,11 @@ describe("SOCKET AUTH - register (agent)", () => {
       });
 
       client.on("connect", () => {
-        client.emit("register", { appName: "unknown-app", token: "token-a" });
+        client.emit("register", {
+          appName: "unknown-app",
+          token: "token-a",
+          tenantId: "tenant-a"
+        });
       });
 
       timeout = setTimeout(
@@ -1591,7 +1595,11 @@ describe("SOCKET AUTH - register (agent)", () => {
       });
 
       client.on("connect", () => {
-        client.emit("register", { appName: "app-a", token: "wrong-token" });
+        client.emit("register", {
+          appName: "app-a",
+          token: "wrong-token",
+          tenantId: "tenant-a"
+        });
       });
 
       timeout = setTimeout(
@@ -1628,7 +1636,11 @@ describe("SOCKET AUTH - register (agent)", () => {
       });
 
       agent.on("connect", async () => {
-        agent.emit("register", { appName: "app-a", token: "token-a" });
+        agent.emit("register", {
+          appName: "app-a",
+          token: "token-a",
+          tenantId: "tenant-a"
+        });
 
         // Give agent time to register
         await new Promise((r) => setTimeout(r, 100));
@@ -1653,6 +1665,182 @@ describe("SOCKET AUTH - register (agent)", () => {
         finish(new Error("Timeout waiting for agent registration"));
       }, 2000);
     });
+  });
+});
+
+// ============================================================================
+// 4b) PER-TENANT APP INDEX
+//
+// App names are unique only within a tenant. A flat appName -> tenant index
+// let one tenant's app name resolve another tenant's registration; with a
+// shared token value the agent authenticated and its events were stamped with
+// the WRONG tenantId — a cross-tenant write. Agents must now be resolved by
+// the tenant they claim.
+// ============================================================================
+
+describe("SOCKET AUTH - per-tenant app index", () => {
+  let client: ClientSocket;
+
+  afterEach(() => {
+    if (client?.connected) client.disconnect();
+  });
+
+  /** Register and resolve to "ok" | the auth_error code | "timeout". */
+  function attemptRegister(payload: Record<string, unknown>): Promise<string> {
+    return new Promise((resolve) => {
+      client = ioClient(`http://localhost:${serverPort}`);
+      const timer = setTimeout(() => resolve("timeout"), 2000);
+
+      client.on("auth_error", (data: { error: string }) => {
+        clearTimeout(timer);
+        resolve(data.error);
+      });
+
+      client.on("connect", () => {
+        client.emit("register", payload);
+        // No auth_error within 300ms means the registration was accepted.
+        setTimeout(() => {
+          clearTimeout(timer);
+          resolve("ok");
+        }, 300);
+      });
+    });
+  }
+
+  it("rejects an agent claiming a tenant it does not belong to", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": { apps: { "app-a": "token-a" }, dashboards: {} },
+        "tenant-b": { apps: { "app-b": "token-b" }, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    // Valid app + valid token, but pointed at the other tenant.
+    const result = await attemptRegister({
+      appName: "app-a",
+      token: "token-a",
+      tenantId: "tenant-b"
+    });
+
+    expect(result).toBe("UNAUTHORIZED");
+  });
+
+  it("keeps identical app names under two tenants separate, even with a shared token", async () => {
+    // The dangerous case: the same app name AND the same token value under two
+    // tenants — a copy-pasted config. Previously the last tenant in the
+    // document won and the other tenant's agent was silently stamped with it.
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": { apps: { api: "shared-token" }, dashboards: {} },
+        "tenant-b": { apps: { api: "shared-token" }, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    const { connectedAgents } = await import("../state");
+    connectedAgents.clear();
+
+    const result = await attemptRegister({
+      appName: "api",
+      token: "shared-token",
+      tenantId: "tenant-a"
+    });
+    expect(result).toBe("ok");
+
+    // The decisive assertion: stamped with the tenant it claimed, not with
+    // whichever tenant happened to be last in TENANTS_JSON.
+    const agentData = Array.from(connectedAgents.values())[0];
+    expect(agentData.tenantId).toBe("tenant-a");
+    expect(agentData.appName).toBe("api");
+  });
+
+  it("lets a tenant with apps coexist with a tenant that declares none", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-with-apps": { apps: { "app-a": "token-a" }, dashboards: {} },
+        "tenant-without-apps": { apps: {}, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    // The tenant that declares apps still authenticates normally.
+    expect(
+      await attemptRegister({
+        appName: "app-a",
+        token: "token-a",
+        tenantId: "tenant-with-apps"
+      })
+    ).toBe("ok");
+
+    if (client?.connected) client.disconnect();
+
+    // Enforcement is global: once ANY tenant declares an app, an agent naming
+    // a tenant without apps is rejected rather than let through untokened.
+    expect(
+      await attemptRegister({
+        appName: "anything",
+        tenantId: "tenant-without-apps"
+      })
+    ).toBe("UNAUTHORIZED");
+  });
+
+  it("falls back to tenant-only registration when no tenant declares any app", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": { apps: {}, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    // requireAgentAuth is false here, so the legacy path applies: a known
+    // tenant is accepted without a token.
+    expect(
+      await attemptRegister({ appName: "app-a", tenantId: "tenant-a" })
+    ).toBe("ok");
+
+    if (client?.connected) client.disconnect();
+
+    // An unknown tenant is still rejected.
+    expect(
+      await attemptRegister({ appName: "app-a", tenantId: "ghost-tenant" })
+    ).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects an agent that omits tenantId when app auth is required", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": { apps: { "app-a": "token-a" }, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    expect(
+      await attemptRegister({ appName: "app-a", token: "token-a" })
+    ).toBe("MISSING_TENANT_ID");
+  });
+
+  it("does not treat inherited Object properties as declared apps", async () => {
+    setTestEnv({
+      TENANTS_JSON: JSON.stringify({
+        "tenant-a": { apps: { "app-a": "token-a" }, dashboards: {} }
+      }),
+      AUTH_MODE: "strict"
+    });
+    await setupServer();
+
+    expect(
+      await attemptRegister({
+        appName: "toString",
+        token: "token-a",
+        tenantId: "tenant-a"
+      })
+    ).toBe("UNAUTHORIZED");
   });
 });
 
@@ -1801,7 +1989,11 @@ describe("TENANT ISOLATION - Critical Data Leakage Prevention", () => {
           // Setup agent for tenant A
           agentA = ioClient(`http://localhost:${serverPort}`);
           agentA.on("connect", () => {
-            agentA.emit("register", { appName: "app-a", token: "token-a" });
+            agentA.emit("register", {
+              appName: "app-a",
+              token: "token-a",
+              tenantId: "tenant-a"
+            });
           });
           agentA.on("agents", () => {
             // Agent registered, send event

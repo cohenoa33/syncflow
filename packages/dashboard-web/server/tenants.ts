@@ -42,15 +42,18 @@ export function parseTenantsConfig(): TenantsConfig {
 export let TENANTS = parseTenantsConfig();
 
 /**
- * APP_INDEX: appName -> { tenantId, token }
- * Built from TENANTS_JSON at module load time
+ * APP_INDEX: tenantId -> appName -> agentToken
+ *
+ * Keyed by tenant FIRST. App names are only unique within a tenant, so a flat
+ * appName -> tenant index lets one tenant's app name resolve another tenant's
+ * registration: with a shared token value the agent would authenticate and its
+ * events would be stamped with the wrong tenantId — a cross-tenant write.
+ * Always resolve with the tenant the agent claims; never by app name alone.
  */
-export let APP_INDEX: Record<string, { tenantId: string; token: string }> = {};
+export let APP_INDEX: Record<string, Record<string, string>> = {};
 
-/**
- * VIEWER_INDEX: tenantId -> Set<token>
- */
-export let VIEWER_INDEX: Record<string, Set<string>> = {};
+/** Total apps declared across all tenants (drives the global auth switch). */
+let APP_COUNT = 0;
 
 /**
  * TEST ONLY: Reset cached tenant state
@@ -58,24 +61,44 @@ export let VIEWER_INDEX: Record<string, Set<string>> = {};
 export function __TEST_resetTenantsConfig() {
   TENANTS = parseTenantsConfig();
   APP_INDEX = {};
-  VIEWER_INDEX = {};
+  APP_COUNT = 0;
   buildIndexes();
 }
 
 function buildIndexes() {
   for (const [tenantId, config] of Object.entries(TENANTS)) {
     const apps = config.apps ?? {};
-    for (const [appName, token] of Object.entries(apps)) {
-      APP_INDEX[appName] = { tenantId, token };
-    }
-    const dashboards = config.dashboards ?? {};
-    if (Object.keys(dashboards).length > 0) {
-      VIEWER_INDEX[tenantId] = new Set(Object.keys(dashboards));
+    if (Object.keys(apps).length > 0) {
+      APP_INDEX[tenantId] = { ...apps };
+      APP_COUNT += Object.keys(apps).length;
     }
   }
 }
 
 buildIndexes();
+
+/**
+ * Resolve an agent's token for (tenantId, appName).
+ *
+ * Returns undefined when the tenant is unknown, declares no apps, or does not
+ * declare this app — callers must treat all three as "reject".
+ */
+export function getAgentToken(
+  tenantId: string,
+  appName: string
+): string | undefined {
+  const apps = APP_INDEX[tenantId];
+  if (!apps) return undefined;
+  // Own-property check only: guards against prototype keys ("toString") being
+  // accepted as app names, matching validateDashboardViewerToken.
+  if (!Object.prototype.hasOwnProperty.call(apps, appName)) return undefined;
+  return apps[appName];
+}
+
+/** Number of apps declared across every tenant. */
+export function getAppCount(): number {
+  return APP_COUNT;
+}
 
 /**
  * Auth Configuration Helper
@@ -119,7 +142,11 @@ export function getAuthConfig(): AuthConfig {
         ? "strict"
         : "dev";
     const requireViewerAuth = hasTenantsConfig;
-    const requireAgentAuth = Object.keys(APP_INDEX).length > 0;
+    // Deliberately GLOBAL, not per-tenant: once any tenant declares an app,
+    // every agent must present a valid token. Making this per-tenant would let
+    // a tenant that declares no apps go on accepting unauthenticated agents
+    // indefinitely, even while every other tenant is locked down.
+    const requireAgentAuth = getAppCount() > 0;
 
     _authConfig = {
       hasTenantsConfig,
@@ -146,7 +173,7 @@ export function getAuthConfig(): AuthConfig {
         requireAgentAuth: _authConfig.requireAgentAuth,
         demoEnabledEffective,
         tenantsCount: Object.keys(TENANTS).length,
-        appsCount: Object.keys(APP_INDEX).length
+        appsCount: getAppCount()
       });
     }
   }
