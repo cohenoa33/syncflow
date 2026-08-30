@@ -47,6 +47,42 @@ describe("buildHeuristicInsightForTrace", () => {
     expect(result.suggestions!.length).toBeGreaterThan(0);
   });
 
+  // The heuristic must agree with classifyHttpLevel() in @syncflow/agent-node.
+  // If they drift, a trace can report "no errors" in the metrics error rate
+  // while its insight describes a failure, or vice versa.
+  it("treats 404 as a non-error, matching the agent's classification", () => {
+    const events: TraceEvent[] = [
+      makeExpressEvent({
+        level: "info",
+        payload: { response: { statusCode: 404, ok: false } }
+      })
+    ];
+    const result = buildHeuristicInsightForTrace("trace-1", events);
+    expect(result.severity).not.toBe("error");
+  });
+
+  it("treats 401 as a non-error, matching the agent's classification", () => {
+    const events: TraceEvent[] = [
+      makeExpressEvent({
+        level: "info",
+        payload: { response: { statusCode: 401, ok: false } }
+      })
+    ];
+    const result = buildHeuristicInsightForTrace("trace-1", events);
+    expect(result.severity).not.toBe("error");
+  });
+
+  it("treats other 4xx as errors, matching the agent's classification", () => {
+    const events: TraceEvent[] = [
+      makeExpressEvent({
+        level: "error",
+        payload: { response: { statusCode: 422, ok: false } }
+      })
+    ];
+    const result = buildHeuristicInsightForTrace("trace-1", events);
+    expect(result.severity).toBe("error");
+  });
+
   it("slow trace (durationMs > 800): severity=warn, slow signal present", () => {
     const events: TraceEvent[] = [
       makeExpressEvent({

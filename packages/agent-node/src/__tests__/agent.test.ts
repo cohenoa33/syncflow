@@ -12,7 +12,12 @@ import { createServer } from "http";
 import request from "supertest";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { SyncFlowAgent, sanitize, limitString } from "../index";
+import {
+  SyncFlowAgent,
+  sanitize,
+  limitString,
+  classifyHttpLevel
+} from "../index";
 
 // ============================================================
 // sanitize
@@ -218,6 +223,85 @@ describe("instrumentExpress", () => {
 
     expect((emitted[0] as any).payload.response.statusCode).toBe(404);
     expect((emitted[0] as any).payload.response.ok).toBe(false);
+    // A 404 is a normal client outcome, not a fault in this service, so it
+    // deliberately stays out of the error rate.
+    expect((emitted[0] as any).level).toBe("info");
+  });
+
+  // Level is what every error consumer keys off — the Error filter tab, the
+  // metrics error rate, and error-rate alert rules. Before this, level came
+  // from duration alone, so a 500 from a fast endpoint was recorded as "info"
+  // and no HTTP failure could raise the error rate or trip a rule.
+  it("emits level=error for a 5xx response", async () => {
+    const emitted: unknown[] = [];
+    const agent = new SyncFlowAgent({ appName: "error-app" });
+    vi.spyOn(agent as any, "emitEvent").mockImplementation((ev: unknown) => {
+      emitted.push(ev);
+    });
+
+    const app = express();
+    agent.instrumentExpress(app);
+    app.get("/boom", (_req, res) => res.status(500).json({ error: "boom" }));
+
+    await request(app).get("/boom");
+
+    expect((emitted[0] as any).payload.response.statusCode).toBe(500);
+    expect((emitted[0] as any).level).toBe("error");
+  });
+
+  it("emits level=error for a 4xx that indicates a real failure", async () => {
+    const emitted: unknown[] = [];
+    const agent = new SyncFlowAgent({ appName: "error-app" });
+    vi.spyOn(agent as any, "emitEvent").mockImplementation((ev: unknown) => {
+      emitted.push(ev);
+    });
+
+    const app = express();
+    agent.instrumentExpress(app);
+    app.get("/bad", (_req, res) => res.status(422).json({ error: "invalid" }));
+
+    await request(app).get("/bad");
+
+    expect((emitted[0] as any).level).toBe("error");
+  });
+});
+
+// ============================================================
+// classifyHttpLevel — the policy behind every error-rate number
+// ============================================================
+
+describe("classifyHttpLevel", () => {
+  const SLOW = 500;
+
+  it("classifies 5xx as error regardless of how fast it returned", () => {
+    expect(classifyHttpLevel(500, 1, SLOW)).toBe("error");
+    expect(classifyHttpLevel(503, 1, SLOW)).toBe("error");
+  });
+
+  it("classifies most 4xx as error", () => {
+    expect(classifyHttpLevel(400, 1, SLOW)).toBe("error");
+    expect(classifyHttpLevel(422, 1, SLOW)).toBe("error");
+    expect(classifyHttpLevel(403, 1, SLOW)).toBe("error");
+  });
+
+  it("exempts 404 and 401, which are routine client outcomes", () => {
+    expect(classifyHttpLevel(404, 1, SLOW)).toBe("info");
+    expect(classifyHttpLevel(401, 1, SLOW)).toBe("info");
+  });
+
+  it("keeps the duration rule for successful responses", () => {
+    expect(classifyHttpLevel(200, 1, SLOW)).toBe("info");
+    expect(classifyHttpLevel(200, SLOW, SLOW)).toBe("warn");
+    expect(classifyHttpLevel(304, SLOW + 1, SLOW)).toBe("warn");
+  });
+
+  it("prefers error over warn when a request both fails and is slow", () => {
+    expect(classifyHttpLevel(500, SLOW + 1000, SLOW)).toBe("error");
+  });
+
+  it("falls back to the duration rule when the status is unknown", () => {
+    expect(classifyHttpLevel(undefined, 1, SLOW)).toBe("info");
+    expect(classifyHttpLevel(undefined, SLOW + 1, SLOW)).toBe("warn");
   });
 });
 

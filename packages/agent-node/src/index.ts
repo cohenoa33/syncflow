@@ -127,6 +127,38 @@ const MONGOOSE_OPERATIONS = [
   "save"
 ] as const;
 
+/**
+ * 4xx statuses that describe a normal client outcome rather than a fault on
+ * this service. They stay out of the error rate so routine crawler traffic and
+ * unauthenticated probes do not drown the signal.
+ */
+const NON_ERROR_CLIENT_STATUSES = new Set([401, 404]);
+
+/**
+ * Derive an event level from the HTTP status and the request duration.
+ *
+ * This defines what "error rate" means everywhere in the product — the Error
+ * filter tab, the metrics error rate, and every error-rate alert rule all key
+ * off level === "error". Changing the policy changes those numbers, and any
+ * alert thresholds already tuned against them.
+ *
+ * Policy: 5xx is always an error. 4xx is an error except for statuses in
+ * NON_ERROR_CLIENT_STATUSES. Otherwise a slow response is "warn" and anything
+ * else is "info" — a failed request stays an error even when it returns fast.
+ */
+export function classifyHttpLevel(
+  statusCode: number | undefined,
+  durationMs: number,
+  slowMsThreshold: number
+): "error" | "warn" | "info" {
+  const status = typeof statusCode === "number" ? statusCode : 0;
+
+  if (status >= 500) return "error";
+  if (status >= 400 && !NON_ERROR_CLIENT_STATUSES.has(status)) return "error";
+
+  return durationMs >= slowMsThreshold ? "warn" : "info";
+}
+
 export class SyncFlowAgent {
   private socket: Socket | null = null;
   private dashboardUrl: string;
@@ -252,7 +284,11 @@ export class SyncFlowAgent {
 
           const result = originalSend.call(this, body);
 
-          const level = durationMs >= agent.slowMsThreshold ? "warn" : "info";
+          const level = classifyHttpLevel(
+            res.statusCode,
+            durationMs,
+            agent.slowMsThreshold
+          );
 
           agent.emitEvent({
             type: "express",

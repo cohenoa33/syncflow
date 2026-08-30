@@ -21,10 +21,19 @@ export function buildHeuristicInsightForTrace(
     expressEvt?.durationMs ??
     ordered.reduce((acc, e) => acc + (e.durationMs ?? 0), 0);
 
+  // Mirrors classifyHttpLevel() in @syncflow/agent-node, which is the source of
+  // truth for what counts as an error: 5xx always, 4xx except 401/404. Keeping
+  // these aligned matters — otherwise a 404 trace reports "no errors" in the
+  // metrics error rate while its insight describes a failure.
+  const isErrorStatus = (code: number) =>
+    code >= 500 || (code >= 400 && code !== 401 && code !== 404);
+
   const hasAnyError =
     ordered.some((e) => e.level === "error") ||
-    (typeof ok === "boolean" ? !ok : false) ||
-    (typeof statusCode === "number" ? statusCode >= 400 : false);
+    (typeof statusCode === "number"
+      ? isErrorStatus(statusCode)
+      : // No status to judge: fall back to an explicit ok:false from the producer.
+        ok === false);
 
   const isSlow = totalMs > 800 || (expressEvt?.durationMs ?? 0) > 500;
 

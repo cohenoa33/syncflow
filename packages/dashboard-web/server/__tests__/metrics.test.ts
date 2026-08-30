@@ -109,11 +109,23 @@ describe("computeMetricsSummary", () => {
     expect(result.totalRequests).toBe(1);
   });
 
-  it("excludeDemo=true falls back to demo events when no real events exist in window", async () => {
+  // Previously this fell back to demo data whenever a window held no real
+  // events, so a quiet production tenant charted seeded traffic and the alert
+  // evaluator — which shares this helper — could fire rules on events that
+  // never happened. An empty window must now report an empty window.
+  it("excludeDemo=true reports an empty window rather than falling back to demo events", async () => {
     await EventModel.create(makeEvent({ source: "demo" }));
     await EventModel.create(makeEvent({ source: "demo" }));
     const result = await computeMetricsSummary(TENANT, "1h", null, true);
-    // No real events → falls back to demo
+    expect(result.totalRequests).toBe(0);
+    expect(result.errorRate).toBe(0);
+    expect(result.p95Latency).toBeNull();
+  });
+
+  it("excludeDemo=false still returns demo events on explicit request", async () => {
+    await EventModel.create(makeEvent({ source: "demo" }));
+    await EventModel.create(makeEvent({ source: "demo" }));
+    const result = await computeMetricsSummary(TENANT, "1h", null, false);
     expect(result.totalRequests).toBe(2);
   });
 

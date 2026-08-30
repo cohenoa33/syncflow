@@ -28,16 +28,13 @@ export async function computeMetricsSummary(
   const since = Date.now() - windowMs;
   const appFilter = appName ? { appName } : {};
 
-  let sourceFilter: any;
-  if (excludeDemo) {
-    // Prefer real traffic; fall back to demo data when no real events exist in the window
-    const realCount = await EventModel.countDocuments({
-      tenantId, type: "express", ts: { $gte: since }, source: { $ne: "demo" }, ...appFilter,
-    });
-    sourceFilter = realCount === 0 ? { source: "demo" } : { source: { $ne: "demo" } };
-  } else {
-    sourceFilter = { source: "demo" };
-  }
+  // Demo data is returned only when demo mode is explicitly requested. An empty
+  // window must report an empty window: silently substituting seeded traffic
+  // would chart fabricated data for a quiet tenant, and — because the alert
+  // evaluator shares this helper — let rules fire on events that never happened.
+  const sourceFilter: any = excludeDemo
+    ? { source: { $ne: "demo" } }
+    : { source: "demo" };
 
   const match: any = { tenantId, type: "express", ts: { $gte: since }, ...sourceFilter, ...appFilter };
 
@@ -101,16 +98,12 @@ export function registerMetricsRoutes(app: Express) {
       const since = Date.now() - windowMs;
       const appFilter = appName ? { appName } : {};
 
-      let sourceFilter: any;
-      if (demoMode) {
-        sourceFilter = { source: "demo" };
-      } else {
-        // Fall back to demo data only when no real express events exist in the window
-        const realCount = await EventModel.countDocuments({
-          tenantId, type: "express", ts: { $gte: since }, source: { $ne: "demo" }, ...appFilter,
-        });
-        sourceFilter = realCount === 0 ? { source: "demo" } : { source: { $ne: "demo" } };
-      }
+      // Demo data only on explicit request — never as a fallback for a quiet
+      // window. The UI already renders a "No request data" state for an empty
+      // result, which is the honest answer.
+      const sourceFilter: any = demoMode
+        ? { source: "demo" }
+        : { source: { $ne: "demo" } };
 
       const match: any = { tenantId, type: "express", ts: { $gte: since }, ...sourceFilter, ...appFilter };
 
