@@ -81,7 +81,7 @@ Pass configuration to the `SyncFlowAgent` constructor:
 const agent = new SyncFlowAgent({
   dashboardUrl: "http://localhost:5050", // Dashboard WebSocket endpoint
   appName: "my-mern-app", // Display name in dashboard
-  slowMsThreshold: 500, // Slow query threshold (ms)
+  slowMsThreshold: 500, // Duration (ms) at or above which events are marked "warn"
   agentKey: "optional-api-key", // API key for authentication
   tenantId: "tenant-123" // Multi-tenant identifier
 });
@@ -91,7 +91,7 @@ const agent = new SyncFlowAgent({
 | ----------------- | ------ | ----------------------- | ---------------------------------------- |
 | `dashboardUrl`    | string | `http://localhost:5050` | Dashboard WebSocket endpoint             |
 | `appName`         | string | `unnamed-app`           | Display name in dashboard                |
-| `slowMsThreshold` | number | `500`                   | Only capture operations slower than this |
+| `slowMsThreshold` | number | `500`                   | Duration at or above which an event is marked `warn` (all operations are captured regardless) |
 | `agentKey`        | string | (none)                  | Optional API key for authentication      |
 | `tenantId`        | string | (none)                  | Optional multi-tenant identifier         |
 
@@ -120,6 +120,22 @@ Express Request → [capture] → Mongoose Query → [capture] →
 
 **Trace Correlation:**
 Each HTTP request gets a unique `traceId`. All database operations within that request's async context share the same `traceId`, enabling full request tracing across layers.
+
+**Event Levels:**
+Every Express event is classified by `classifyHttpLevel()`, which is the source of truth for what counts as an error across the whole product — the dashboard's Error filter tab, the metrics error rate, and every error-rate alert rule key off `level === "error"`.
+
+| Condition                          | Level   |
+| ---------------------------------- | ------- |
+| Status ≥ 500                       | `error` |
+| Status ≥ 400, except 401 and 404   | `error` |
+| Otherwise, duration ≥ `slowMsThreshold` | `warn`  |
+| Otherwise                          | `info`  |
+
+`401` and `404` are treated as routine client outcomes rather than faults in the service, so unauthenticated probes and crawler traffic don't drown the error signal. A failed request stays an `error` even when it returns quickly.
+
+Mongoose events use the duration rule only (`warn` at or above `slowMsThreshold`, else `info`), except failed operations, which are always `error`.
+
+Changing this policy shifts the error rate everywhere, including any alert thresholds already tuned against it. The dashboard's heuristic insight engine and its LLM insight prompt both mirror these rules; keep all three aligned.
 
 **Sanitization:**
 Redacts: `password, pass, pwd, token, access_token, refresh_token, authorization, cookie, set-cookie, apikey, secret, client_secret`

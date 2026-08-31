@@ -300,6 +300,7 @@ Dashboard UI (React + Tailwind)
 **AI Insights** (optional, with OpenAI API):
 
 - Per-trace analysis: summary, severity, root cause, signals, suggestions
+- Severity follows the agent's `classifyHttpLevel()` policy (5xx and 4xx except 401/404 are errors), so insights agree with the Error filter and the metrics error rate
 - Heuristic fallback (no API call) if OpenAI key is missing
 - Rate-limited (default: 20/min) and sampled (configurable %) for production safety
 - Cached in MongoDB, regenerate on demand
@@ -340,7 +341,7 @@ Each package has its own detailed README:
 
 **Dashboard:** Real-time Socket.IO streaming, trace grouping, search/filters, JSON export, MongoDB persistence, AI insights with caching and regeneration, rate limiting, multi-tenant auth and tenant isolation, threshold-based alerting with real-time in-app notifications, historical metrics
 
-**Tests:** 132 passing — auth contract (HTTP + Socket.IO), alert evaluator, metrics bucketing, heuristic insights, rate limiting, sampling, agent instrumentation, and distributed tracing
+**Tests:** 150 passing — auth contract (HTTP + Socket.IO), alert evaluator, metrics bucketing, HTTP level classification, heuristic insights, rate limiting, sampling, agent instrumentation, and distributed tracing
 
 ---
 

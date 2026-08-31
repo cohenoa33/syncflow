@@ -39,7 +39,7 @@ Built with: **Vite**, **React**, **TypeScript**, **Tailwind CSS v4**, **Express*
 - ⏱️ **Per-rule cooldown** to prevent notification spam (default: 1 hour)
 - 🔇 **Enable/disable rules** without deleting them
 - ⚙️ **Configurable evaluation schedule** via `ALERT_EVAL_CRON` (default: every 5 minutes)
-- 🎭 **Demo-data fallback** — alert evaluator falls back to demo traffic when no real events exist in the window
+- 🎭 **Real traffic only** — the evaluator never substitutes demo data for a quiet window, so rules can't fire on seeded events; a window with no real traffic is skipped
 
 ### UX
 
