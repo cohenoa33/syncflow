@@ -16,7 +16,8 @@ import {
   SyncFlowAgent,
   sanitize,
   limitString,
-  classifyHttpLevel
+  classifyHttpLevel,
+  isSensitiveKey
 } from "../index";
 
 // ============================================================
@@ -91,6 +92,86 @@ describe("sanitize", () => {
     const obj = { a: { b: { c: { d: "ok-at-depth-4" } } } };
     const result = sanitize(obj);
     expect(result.a.b.c.d).toBe("ok-at-depth-4");
+  });
+
+  it("redacts expanded sensitive key variants (mixed case)", () => {
+    const result = sanitize({
+      "x-api-key": "sk-live-aaa",
+      "X-Api-Key": "sk-live-bbb",
+      "x-auth-token": "tkn-ccc",
+      github_token: "ghp_ddd",
+      service_password: "p@ss",
+      client_secret: "cs-eee",
+      api_key: "ak-fff"
+    });
+    expect(result["x-api-key"]).toBe("[REDACTED]");
+    expect(result["X-Api-Key"]).toBe("[REDACTED]");
+    expect(result["x-auth-token"]).toBe("[REDACTED]");
+    expect(result.github_token).toBe("[REDACTED]");
+    expect(result.service_password).toBe("[REDACTED]");
+    expect(result.client_secret).toBe("[REDACTED]");
+    expect(result.api_key).toBe("[REDACTED]");
+  });
+
+  it("does NOT redact benign keys that merely contain 'key' or 'pass'", () => {
+    const result = sanitize({
+      primaryKey: "pk-123",
+      keyboardLayout: "us-qwerty",
+      keyCount: 42,
+      username: "alice"
+    });
+    expect(result.primaryKey).toBe("pk-123");
+    expect(result.keyboardLayout).toBe("us-qwerty");
+    expect(result.keyCount).toBe(42);
+    expect(result.username).toBe("alice");
+  });
+});
+
+// ============================================================
+// isSensitiveKey
+// ============================================================
+
+describe("isSensitiveKey", () => {
+  it("matches exact sensitive keys case-insensitively", () => {
+    expect(isSensitiveKey("Authorization")).toBe(true);
+    expect(isSensitiveKey("COOKIE")).toBe(true);
+    expect(isSensitiveKey("Set-Cookie")).toBe(true);
+    expect(isSensitiveKey("x-api-key")).toBe(true);
+    expect(isSensitiveKey("X-Api-Key")).toBe(true);
+    expect(isSensitiveKey("credentials")).toBe(true);
+  });
+
+  it("matches credential-suffix patterns", () => {
+    expect(isSensitiveKey("github_token")).toBe(true);
+    expect(isSensitiveKey("GITHUB-TOKEN")).toBe(true);
+    expect(isSensitiveKey("service_password")).toBe(true);
+    expect(isSensitiveKey("stripe_api_key")).toBe(true);
+    expect(isSensitiveKey("vendor-api-key")).toBe(true);
+    expect(isSensitiveKey("app_secret")).toBe(true);
+  });
+
+  it("does not match benign keys", () => {
+    expect(isSensitiveKey("primaryKey")).toBe(false);
+    expect(isSensitiveKey("keyboardLayout")).toBe(false);
+    expect(isSensitiveKey("keyCount")).toBe(false);
+    expect(isSensitiveKey("username")).toBe(false);
+    expect(isSensitiveKey("passengerCount")).toBe(false);
+  });
+
+  it("matches camelCase credential variants", () => {
+    expect(isSensitiveKey("accessToken")).toBe(true);
+    expect(isSensitiveKey("refreshToken")).toBe(true);
+    expect(isSensitiveKey("authToken")).toBe(true);
+    expect(isSensitiveKey("apiToken")).toBe(true);
+    expect(isSensitiveKey("clientSecret")).toBe(true);
+    expect(isSensitiveKey("AccessToken")).toBe(true);
+  });
+
+  it("is robust to surrounding whitespace in key names", () => {
+    expect(isSensitiveKey("  Authorization  ")).toBe(true);
+    expect(isSensitiveKey("\tx-api-key\n")).toBe(true);
+    expect(isSensitiveKey("   ")).toBe(false);
+    expect(isSensitiveKey("")).toBe(false);
   });
 });
 

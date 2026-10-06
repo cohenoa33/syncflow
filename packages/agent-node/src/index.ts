@@ -32,19 +32,57 @@ export interface SyncFlowEvent {
 
 // keys we should never ship out
 const SENSITIVE_KEYS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
   "password",
+  "passwd",
   "pass",
   "pwd",
   "token",
   "access_token",
   "refresh_token",
-  "authorization",
-  "cookie",
-  "set-cookie",
+  "api_key",
   "apikey",
+  "api-key",
+  "x-api-key",
+  "x-auth-token",
+  "x-token",
+  "x-secret",
   "secret",
-  "client_secret"
+  "client_secret",
+  "clientsecret",
+  "credential",
+  "credentials",
+  // camelCase variants (compared post-lowercase)
+  "accesstoken",
+  "refreshtoken",
+  "authtoken",
+  "apitoken"
 ]);
+
+// suffixes that indicate a credential-bearing field (e.g. github_token, service_password)
+const SENSITIVE_SUFFIXES = [
+  "_token",
+  "-token",
+  "_secret",
+  "-secret",
+  "_password",
+  "-password",
+  "_api_key",
+  "-api-key"
+];
+
+export function isSensitiveKey(key: string): boolean {
+  if (typeof key !== "string") return false;
+  const lower = key.toLowerCase().trim();
+  if (!lower) return false;
+  if (SENSITIVE_KEYS.has(lower)) return true;
+  for (const suffix of SENSITIVE_SUFFIXES) {
+    if (lower.endsWith(suffix)) return true;
+  }
+  return false;
+}
 
 function isPlainObject(v: any) {
   return v && typeof v === "object" && v.constructor === Object;
@@ -95,7 +133,7 @@ export function sanitize(input: any, maxDepth = 4, maxKeys = 50): any {
     const out: Record<string, any> = {};
     const keys = Object.keys(v).slice(0, maxKeys);
     for (const k of keys) {
-      if (SENSITIVE_KEYS.has(k.toLowerCase())) {
+      if (isSensitiveKey(k)) {
         out[k] = redactValue(k, v[k]);
       } else {
         out[k] = walk(v[k], depth + 1);
