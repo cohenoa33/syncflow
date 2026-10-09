@@ -20,6 +20,64 @@ import { getAuthConfig } from "../tenants";
 
 const DEMO_SOURCE = "demo";
 
+type AppsValidationResult =
+  | { ok: true; apps: string[] | null }
+  | { ok: false; message: string };
+
+/**
+ * Validate the optional `apps` field on the demo-seed body.
+ *
+ * - Missing/undefined → `{ ok: true, apps: null }` (caller uses defaults).
+ * - Present → must be a non-empty array of non-empty strings. Each item is
+ *   trimmed, then duplicates (post-trim) are collapsed, preserving first-seen
+ *   order. Any violation returns `{ ok: false }` with a human-readable message.
+ */
+function validateAppsInput(body: unknown): AppsValidationResult {
+  if (body === null || typeof body !== "object") {
+    return { ok: true, apps: null };
+  }
+
+  const raw = (body as Record<string, unknown>).apps;
+  if (raw === undefined) {
+    return { ok: true, apps: null };
+  }
+
+  if (!Array.isArray(raw)) {
+    return { ok: false, message: "`apps` must be an array of strings" };
+  }
+
+  if (raw.length === 0) {
+    return { ok: false, message: "`apps` must not be empty" };
+  }
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (typeof item !== "string") {
+      return {
+        ok: false,
+        message: `\`apps[${i}]\` must be a string`
+      };
+    }
+
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      return {
+        ok: false,
+        message: `\`apps[${i}]\` must not be empty`
+      };
+    }
+
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+
+  return { ok: true, apps: result };
+}
+
 function extractBearerToken(req: Request): string {
   const auth = String(req.headers.authorization ?? "").trim();
   if (!auth.toLowerCase().startsWith("bearer ")) return "";
@@ -108,12 +166,17 @@ export function registerDemoRoutes(app: Express, io: Server) {
         });
       }
 
-      const demoApps = [`demo-${tenantId}-app`, `demo-app-${tenantId}`];
+      const validated = validateAppsInput((req as any).body);
+      if (!validated.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: "BAD_REQUEST",
+          message: validated.message
+        });
+      }
 
-      const requested: string[] =
-        Array.isArray((req as any).body?.apps) && (req as any).body.apps.length
-          ? (req as any).body.apps
-          : demoApps;
+      const demoApps = [`demo-${tenantId}-app`, `demo-app-${tenantId}`];
+      const requested: string[] = validated.apps ?? demoApps;
 
       // Only delete demo-seeded traces for this tenant (do NOT wipe real data)
       await EventModel.deleteMany({ tenantId, source: DEMO_SOURCE });
