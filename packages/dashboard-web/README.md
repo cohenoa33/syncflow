@@ -178,6 +178,21 @@ To see real traces from instrumented apps, configure `TENANTS_JSON` and matching
 
 ## 🔐 Auth & Demo Mode (test-aligned)
 
+### Security / deployment model
+
+SyncFlow is open source and self-hosted. The intended model is a single owner/operator who deploys one dashboard for their own applications. A tenant can group multiple instrumented apps, each with its own agent key. Anyone who can load a given dashboard is considered a trusted operator of it.
+
+Consequences for the current auth model:
+
+- **`VITE_*` values are bundled into the browser.** Vite inlines them into the frontend bundle at build time, so they are visible to anyone who can load the dashboard. Do not treat them as server-side secrets.
+- **`VITE_DASHBOARD_API_KEY` is a deployment-level viewer credential, not a per-user credential.** It identifies "this dashboard build" to the server, not any individual human.
+- **`VITE_DEMO_MODE_TOKEN` is similarly browser-visible** when demo mode is configured, for the same reason.
+- **Deploy the dashboard only where its users are trusted operators** of the data it exposes.
+- **Use unique credentials per deployment.** Never reuse production viewer tokens, demo tokens, or agent keys in the public demo deployment.
+- **The public demo deployment must contain only disposable demo data.** Treat any data visible there as public.
+
+Server-only values (`TENANTS_JSON`, `DEMO_MODE_TOKEN`, `OPENAI_API_KEY`, `MONGODB_URI`, agent keys inside `TENANTS_JSON`) are the actual secrets and must stay out of the frontend bundle and version control.
+
 ### Environment variables (auth/demo)
 
 - `TENANTS_JSON`: Non-empty enables tenant-aware viewer auth. Empty/absent means no viewer token required; `/api/traces` returns `[]`.
