@@ -3,6 +3,7 @@ import type { Server } from "socket.io";
 import { z } from "zod";
 import { AlertRuleModel, AlertFireModel } from "../models";
 import { runEvaluation } from "../alerts/evaluator";
+import { escapeRegex } from "../utils/regex";
 
 const AlertRuleSchema = z.object({
   name:       z.string().min(1).max(100),
@@ -107,7 +108,8 @@ export function registerAlertsRoutes(app: Express, io: Server): void {
       const filter: any = { tenantId };
       if (req.query.ruleId) filter.ruleId = req.query.ruleId as string;
       if (req.query.metric) filter.metric = req.query.metric as string;
-      if (req.query.q) filter.ruleName = { $regex: req.query.q, $options: "i" };
+      const q = ((req.query.q as string) || "").trim();
+      if (q) filter.ruleName = { $regex: escapeRegex(q), $options: "i" };
 
       const page = Math.max(0, parseInt((req.query.page as string) || "0", 10));
       const pageSize = Math.min(100, Math.max(1, parseInt((req.query.pageSize as string) || "25", 10)));

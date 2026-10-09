@@ -3,6 +3,7 @@ import { EventModel, InsightModel } from "../models";
 import type { Server } from "socket.io";
 import { eventsBuffer } from "../state";
 import { getAuthConfig } from "../tenants";
+import { escapeRegex } from "../utils/regex";
 
 export function registerTracesRoutes(app: Express, io: Server) {
   app.get("/api/traces", async (req, res) => {
@@ -45,7 +46,7 @@ export function registerTracesRoutes(app: Express, io: Server) {
       // totals unaffected by transient filters.
       const preFilters: any[] = [];
       if (q) {
-        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const escaped = escapeRegex(q);
         preFilters.push({
           $or: [
             { appName: { $regex: escaped, $options: "i" } },
