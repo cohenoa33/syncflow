@@ -129,7 +129,10 @@ export function registerTracesRoutes(app: Express, io: Server) {
       const allEventIds = (aggResult?.page ?? []).flatMap((g: any) => g.eventIds);
 
       const events = allEventIds.length
-        ? await EventModel.find({ _id: { $in: allEventIds } }).sort({ ts: 1 }).lean()
+        ? await EventModel.find({
+            tenantId,
+            _id: { $in: allEventIds }
+          }).sort({ ts: 1 }).lean()
         : [];
 
       res.json({ events, totalGroups, expressGroups, mongooseGroups, errorGroups, filteredTotal });

@@ -14,7 +14,8 @@ import {
   beforeEach,
   afterEach,
   beforeAll,
-  afterAll
+  afterAll,
+  vi
 } from "vitest";
 import express, { Express } from "express";
 import { createServer, Server as HttpServer } from "http";
@@ -423,6 +424,107 @@ describe("HTTP AUTH - requireApiKey middleware", () => {
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.events)).toBe(true);
+    });
+
+    it("should return only the requesting tenant's events when another tenant has events too", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: { "app-a": "token-a" },
+            dashboards: { "viewer-a": true }
+          },
+          "tenant-b": {
+            apps: { "app-b": "token-b" },
+            dashboards: { "viewer-b": true }
+          }
+        }),
+        AUTH_MODE: "strict"
+      });
+      await setupServer();
+
+      const now = Date.now();
+      await EventModel.insertMany([
+        {
+          id: "evt-a",
+          tenantId: "tenant-a",
+          traceId: "trace-a",
+          appName: "app-a",
+          type: "express",
+          operation: "GET /a",
+          ts: now
+        },
+        {
+          id: "evt-b",
+          tenantId: "tenant-b",
+          traceId: "trace-b",
+          appName: "app-b",
+          type: "express",
+          operation: "GET /b",
+          ts: now
+        }
+      ]);
+
+      const res = await request(app)
+        .get("/api/traces")
+        .set("X-Tenant-Id", "tenant-a")
+        .set("Authorization", "Bearer viewer-a");
+
+      expect(res.status).toBe(200);
+      expect(res.body.events.length).toBe(1);
+      expect(res.body.events[0].tenantId).toBe("tenant-a");
+      expect(
+        res.body.events.every((e: any) => e.tenantId === "tenant-a")
+      ).toBe(true);
+    });
+
+    it("should include tenantId in the secondary EventModel.find query", async () => {
+      setTestEnv({
+        TENANTS_JSON: JSON.stringify({
+          "tenant-a": {
+            apps: { "app-a": "token-a" },
+            dashboards: { "viewer-a": true }
+          }
+        }),
+        AUTH_MODE: "strict"
+      });
+      await setupServer();
+
+      await EventModel.insertMany([
+        {
+          id: "evt-a",
+          tenantId: "tenant-a",
+          traceId: "trace-a",
+          appName: "app-a",
+          type: "express",
+          operation: "GET /a",
+          ts: Date.now()
+        }
+      ]);
+
+      const findSpy = vi.spyOn(EventModel, "find");
+
+      try {
+        const res = await request(app)
+          .get("/api/traces")
+          .set("X-Tenant-Id", "tenant-a")
+          .set("Authorization", "Bearer viewer-a");
+
+        expect(res.status).toBe(200);
+
+        // The secondary query is the only EventModel.find call in this route
+        // (the group aggregation uses EventModel.aggregate). Assert it is
+        // scoped to the requesting tenant as defense-in-depth.
+        const secondaryCall = findSpy.mock.calls.find(
+          (args) =>
+            args[0] &&
+            typeof args[0] === "object" &&
+            "_id" in (args[0] as any)
+        );
+        expect(secondaryCall).toBeDefined();
+        expect(secondaryCall![0]).toMatchObject({ tenantId: "tenant-a" });
+      } finally {
+        findSpy.mockRestore();
+      }
     });
   });
 
