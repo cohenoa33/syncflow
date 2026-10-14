@@ -18,10 +18,26 @@ import { startAlertEvaluator } from "./alerts/evaluator";
 import { startAlertCleanup } from "./alerts/cleanup";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
-import { getAuthConfig } from "./tenants";
+import {
+  getAuthConfig,
+  initializeTenantsConfig,
+  TenantsConfigError
+} from "./tenants";
 import { corsOriginCallback } from "./utils/cors";
 
 async function main() {
+  // Validate TENANTS_JSON before any consumer reads tenant state. On failure,
+  // abort startup with a fixed, non-sensitive message.
+  try {
+    initializeTenantsConfig();
+  } catch (err) {
+    if (err instanceof TenantsConfigError) {
+      console.error(`[Dashboard] ❌ ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
   // Initialize and log auth configuration at startup
   getAuthConfig();
 

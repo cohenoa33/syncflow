@@ -21,25 +21,22 @@ type TenantsConfig = Record<
 >;
 
 /**
- * Parse TENANTS_JSON env var into TenantsConfig
+ * Thrown when TENANTS_JSON is set but cannot be used as a tenant configuration.
+ * Server startup must abort rather than degrade to an empty config.
  */
-export function parseTenantsConfig(): TenantsConfig {
-  const raw = process.env.TENANTS_JSON ?? "";
-
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    console.warn("[Dashboard] Failed to parse TENANTS_JSON");
-    return {};
+export class TenantsConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TenantsConfigError";
   }
 }
 
 /**
- * Global TENANTS config: Single source of truth
+ * Current tenant config. Starts empty; only populated after a successful
+ * `initializeTenantsConfig()` call. Exported so other modules read via
+ * ESM live binding.
  */
-export let TENANTS = parseTenantsConfig();
+export let TENANTS: TenantsConfig = {};
 
 /**
  * APP_INDEX: tenantId -> appName -> agentToken
@@ -55,27 +52,105 @@ export let APP_INDEX: Record<string, Record<string, string>> = {};
 /** Total apps declared across all tenants (drives the global auth switch). */
 let APP_COUNT = 0;
 
-/**
- * TEST ONLY: Reset cached tenant state
- */
-export function __TEST_resetTenantsConfig() {
-  TENANTS = parseTenantsConfig();
-  APP_INDEX = {};
-  APP_COUNT = 0;
-  buildIndexes();
-}
+let _tenantsInitialized = false;
+let _authConfig: AuthConfig | null = null;
+let _loggedAtStartup = false;
 
-function buildIndexes() {
-  for (const [tenantId, config] of Object.entries(TENANTS)) {
+function buildIndexesFrom(
+  tenants: TenantsConfig
+): { appIndex: Record<string, Record<string, string>>; appCount: number } {
+  const appIndex: Record<string, Record<string, string>> = {};
+  let appCount = 0;
+  for (const [tenantId, config] of Object.entries(tenants)) {
     const apps = config.apps ?? {};
     if (Object.keys(apps).length > 0) {
-      APP_INDEX[tenantId] = { ...apps };
-      APP_COUNT += Object.keys(apps).length;
+      appIndex[tenantId] = { ...apps };
+      appCount += Object.keys(apps).length;
     }
   }
+  return { appIndex, appCount };
 }
 
-buildIndexes();
+/**
+ * Explicit runtime initialization of tenant configuration.
+ *
+ * MUST be called after `loadServerEnv()` and before any code that reads tenant
+ * state (`getAuthConfig`, auth middleware, socket handlers, demo routes).
+ *
+ * Behavior:
+ * - TENANTS_JSON missing / empty / whitespace → config is `{}` (valid).
+ * - Non-empty invalid JSON → throws `TenantsConfigError`.
+ * - Valid JSON but not a plain object → throws `TenantsConfigError`.
+ *
+ * On any failure, previously initialized state is cleared: tenant state is
+ * marked uninitialized and the auth cache is invalidated, so no caller can
+ * observe stale values after a failed re-init.
+ */
+export function initializeTenantsConfig(): void {
+  // Invalidate any previously initialized state up-front. If parsing throws,
+  // callers will see "uninitialized" rather than a stale prior config.
+  _tenantsInitialized = false;
+  _authConfig = null;
+  _loggedAtStartup = false;
+
+  const raw = (process.env.TENANTS_JSON ?? "").trim();
+
+  let nextTenants: TenantsConfig;
+
+  if (raw === "") {
+    nextTenants = {};
+  } else {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new TenantsConfigError(
+        "TENANTS_JSON is set but is not valid JSON. Refusing to start."
+      );
+    }
+
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      throw new TenantsConfigError(
+        "TENANTS_JSON must be a JSON object keyed by tenantId."
+      );
+    }
+
+    nextTenants = parsed as TenantsConfig;
+  }
+
+  // Publish only after successful validation.
+  const { appIndex, appCount } = buildIndexesFrom(nextTenants);
+  TENANTS = nextTenants;
+  APP_INDEX = appIndex;
+  APP_COUNT = appCount;
+  _tenantsInitialized = true;
+}
+
+/**
+ * TEST ONLY: Reset cached tenant state by re-running initialization against
+ * the current `process.env.TENANTS_JSON`. On failure (malformed env), the
+ * `TenantsConfigError` propagates — tenant state is left uninitialized.
+ */
+export function __TEST_resetTenantsConfig() {
+  initializeTenantsConfig();
+}
+
+/**
+ * TEST ONLY: Force an uninitialized state WITHOUT re-reading env. Lets tests
+ * exercise the init-guard without supplying a config.
+ */
+export function __TEST_clearTenantsInit() {
+  _tenantsInitialized = false;
+  _authConfig = null;
+  _loggedAtStartup = false;
+  TENANTS = {};
+  APP_INDEX = {};
+  APP_COUNT = 0;
+}
 
 /**
  * Resolve an agent's token for (tenantId, appName).
@@ -113,9 +188,6 @@ export interface AuthConfig {
   requireAgentAuth: boolean; // Whether agent auth is required
 }
 
-let _authConfig: AuthConfig | null = null;
-let _loggedAtStartup = false;
-
 /**
  * TEST ONLY: Reset cached auth config
  */
@@ -135,6 +207,10 @@ export function __TEST_resetAuthConfig() {
  */
 
 export function getAuthConfig(): AuthConfig {
+  if (!_tenantsInitialized) {
+    throw new Error("getAuthConfig() called before initializeTenantsConfig()");
+  }
+
   if (!_authConfig) {
     const hasTenantsConfig = Object.keys(TENANTS).length > 0;
     const authMode =

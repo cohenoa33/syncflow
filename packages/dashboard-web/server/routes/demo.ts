@@ -84,21 +84,6 @@ function extractBearerToken(req: Request): string {
   return auth.slice("bearer ".length).trim();
 }
 
-function isTenantsConfigured(): boolean {
-  const raw = String(process.env.TENANTS_JSON ?? "").trim();
-  if (!raw) return false;
-
-  try {
-    const parsed = JSON.parse(raw);
-    return (
-      !!parsed && typeof parsed === "object" && Object.keys(parsed).length > 0
-    );
-  } catch {
-    // If invalid JSON is set, treat as configured (fail closed)
-    return true;
-  }
-}
-
 /**
  * Check if demo mode is enabled based on config rules:
  * - DEMO_MODE_ENABLED must be "true"
@@ -129,7 +114,7 @@ function validateDemoToken(req: Request): boolean {
   const expected = String(process.env.DEMO_MODE_TOKEN ?? "").trim();
   if (!expected) return false;
 
-  if (isTenantsConfigured()) {
+  if (getAuthConfig().hasTenantsConfig) {
     const provided = String(req.headers["x-demo-token"] ?? "").trim();
     return provided === expected;
   }
