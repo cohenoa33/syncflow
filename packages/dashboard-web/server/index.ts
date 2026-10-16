@@ -24,6 +24,12 @@ import {
   TenantsConfigError
 } from "./tenants";
 import { corsOriginCallback } from "./utils/cors";
+import {
+  NumericEnvError,
+  SPECS,
+  readNumericEnv,
+  validateNumericConfig
+} from "./config/numericEnv";
 
 async function main() {
   // Validate TENANTS_JSON before any consumer reads tenant state. On failure,
@@ -32,6 +38,16 @@ async function main() {
     initializeTenantsConfig();
   } catch (err) {
     if (err instanceof TenantsConfigError) {
+      console.error(`[Dashboard] ❌ ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  try {
+    validateNumericConfig();
+  } catch (err) {
+    if (err instanceof NumericEnvError) {
       console.error(`[Dashboard] ❌ ${err.message}`);
       process.exit(1);
     }
@@ -78,7 +94,7 @@ async function main() {
 
   serveStaticUi(app);
 
-  const PORT = Number(process.env.PORT || 5050);
+  const PORT = readNumericEnv(SPECS.PORT);
   httpServer.listen(PORT, () => {
     console.log(`[Dashboard] running on port ${PORT}`);
   });

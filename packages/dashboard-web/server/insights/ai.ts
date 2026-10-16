@@ -4,6 +4,7 @@ import { getOpenAI } from "./openaiClient";
 import { summarizeEventsForLLM } from "./summarize";
 import { getInsightSystemPrompt } from "./llmPrompt";
 import type { Insight, TraceEvent } from "./types";
+import { SPECS, readNumericEnv } from "../config/numericEnv";
 /* -----------------------------
         Helpers
 ----------------------------- */
@@ -144,7 +145,7 @@ export async function buildAIInsightForTrace(
 
   const user = { traceId, appName, headerOp, events: traceSummary };
 
-  const timeoutMs = Number(process.env.INSIGHT_TIMEOUT_MS || 12_000);
+  const timeoutMs = readNumericEnv(SPECS.INSIGHT_TIMEOUT_MS);
 
   let resp;
   try {
@@ -164,7 +165,7 @@ export async function buildAIInsightForTrace(
           timeoutMs,
           `openai.responses.parse (attempt ${attempt})`
         ),
-      { retries: Number(process.env.INSIGHT_RETRIES || 2) }
+      { retries: readNumericEnv(SPECS.INSIGHT_RETRIES) }
     );
   } catch (err) {
 

@@ -1,3 +1,5 @@
+import { SPECS, readNumericEnv } from "../config/numericEnv";
+
 type Bucket = { count: number; resetAt: number };
 
 const buckets = new Map<string, Bucket>();
@@ -7,8 +9,8 @@ function now() {
 }
 
 export function checkRateLimit(key: string) {
-  const windowMs = Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 60_000);
-  const max = Number(process.env.AI_RATE_LIMIT_MAX || 20);
+  const windowMs = readNumericEnv(SPECS.AI_RATE_LIMIT_WINDOW_MS);
+  const max = readNumericEnv(SPECS.AI_RATE_LIMIT_MAX);
 
   const t = now();
   const cur = buckets.get(key); 
