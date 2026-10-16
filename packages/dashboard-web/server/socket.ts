@@ -10,7 +10,6 @@ import { validateDashboardViewerToken } from "./auth";
 import { corsOriginCallback } from "./utils/cors";
 
 export function attachSocketServer(httpServer: HttpServer) {
-  console.log("[Socket] Attaching Socket.IO server...");
 
   const io = new Server(httpServer, {
     cors: {

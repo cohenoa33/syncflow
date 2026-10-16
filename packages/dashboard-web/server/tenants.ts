@@ -242,15 +242,7 @@ export function getAuthConfig(): AuthConfig {
         demoModeEnabled &&
         (authMode === "dev" || (authMode === "strict" && demoToken !== ""));
 
-        console.log("[Dashboard] Auth Configuration:", {
-        authMode: _authConfig.authMode,
-        hasTenantsConfig: _authConfig.hasTenantsConfig,
-        requireViewerAuth: _authConfig.requireViewerAuth,
-        requireAgentAuth: _authConfig.requireAgentAuth,
-        demoEnabledEffective,
-        tenantsCount: Object.keys(TENANTS).length,
-        appsCount: getAppCount()
-      });
+        
     }
   }
 
