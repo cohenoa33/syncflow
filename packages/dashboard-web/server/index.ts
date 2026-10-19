@@ -30,6 +30,7 @@ import {
   readNumericEnv,
   validateNumericConfig
 } from "./config/numericEnv";
+import { AlertCronError, validateAlertCronConfig } from "./config/alertCron";
 
 async function main() {
   // Validate TENANTS_JSON before any consumer reads tenant state. On failure,
@@ -48,6 +49,16 @@ async function main() {
     validateNumericConfig();
   } catch (err) {
     if (err instanceof NumericEnvError) {
+      console.error(`[Dashboard] ❌ ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  try {
+    validateAlertCronConfig();
+  } catch (err) {
+    if (err instanceof AlertCronError) {
       console.error(`[Dashboard] ❌ ${err.message}`);
       process.exit(1);
     }

@@ -2,6 +2,7 @@ import cron from "node-cron";
 import type { Server } from "socket.io";
 import { AlertRuleModel, AlertFireModel } from "../models";
 import { computeMetricsSummary } from "../routes/metrics";
+import { readAlertEvalCron } from "../config/alertCron";
 
 export type RuleResult = {
   ruleId: string;
@@ -12,7 +13,7 @@ export type RuleResult = {
 };
 
 export function startAlertEvaluator(io: Server): void {
-  const cronExpr = process.env.ALERT_EVAL_CRON ?? "*/5 * * * *";
+  const cronExpr = readAlertEvalCron();
 
   cron.schedule(cronExpr, async () => {
     console.log("[Alerts] Tick: running evaluation");
