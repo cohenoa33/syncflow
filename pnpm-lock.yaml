@@ -24,8 +24,8 @@ importers:
         specifier: ^4.22.3
         version: 4.22.3
       mongoose:
-        specifier: ^8.0.3
-        version: 8.20.1(socks@2.8.7)
+        specifier: ^8.24.7
+        version: 8.24.7(socks@2.8.10)
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -52,8 +52,8 @@ importers:
         specifier: ^4.22.3
         version: 4.22.3
       mongoose:
-        specifier: ^8.0.3
-        version: 8.20.1(socks@2.8.7)
+        specifier: ^8.24.7
+        version: 8.24.7(socks@2.8.10)
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -80,8 +80,8 @@ importers:
         specifier: ^4.22.3
         version: 4.22.3
       mongoose:
-        specifier: ^8.0.3
-        version: 8.20.1(socks@2.8.7)
+        specifier: ^8.24.7
+        version: 8.24.7(socks@2.8.10)
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -125,7 +125,7 @@ importers:
         version: 9.5.0
       mongoose:
         specifier: ^8.0.0
-        version: 8.20.1(socks@2.8.7)
+        version: 8.20.1(socks@2.8.10)
       supertest:
         specifier: ^6.3.3
         version: 6.3.4
@@ -151,8 +151,8 @@ importers:
         specifier: ^4.22.3
         version: 4.22.3
       mongoose:
-        specifier: ^8.20.1
-        version: 8.20.1(socks@2.8.7)
+        specifier: ^8.24.7
+        version: 8.24.7(socks@2.8.10)
       node-cron:
         specifier: ^3.0.3
         version: 3.0.3
@@ -189,7 +189,7 @@ importers:
         version: 4.17.25
       '@types/mongoose':
         specifier: ^5.11.97
-        version: 5.11.97(socks@2.8.7)
+        version: 5.11.97(socks@2.8.10)
       '@types/node':
         specifier: ^20.10.5
         version: 20.19.25
@@ -1524,8 +1524,8 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
-  ip-address@10.1.0:
-    resolution: {integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==}
+  ip-address@10.7.4:
+    resolution: {integrity: sha512-DWBMKyeM25D70nrIiTkgQth59/G+naKOTep6huF9j+GmeK3DMD60Zvxg5d5qQnz+38AHgou6ean2LECX+lrKDg==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -1777,12 +1777,20 @@ packages:
     resolution: {integrity: sha512-G+n3maddlqkQrP1nXxsI0q20144OSo+pe+HzRRGqaC4yK3FLYKqejqB9cbIi+SX7eoRsnG23LHGYNp8n7mWL2Q==}
     engines: {node: '>=16.20.1'}
 
+  mongoose@8.24.7:
+    resolution: {integrity: sha512-+hrEOLpLGPgOt7S/UrcBAKZ4gvB6+5qf16jspWH5xQ8WtQu9lRTzcqy04ZNQrlIox4Pl6Nh2RzlNDPSOFw9rng==}
+    engines: {node: '>=16.20.1'}
+
   mpath@0.9.0:
     resolution: {integrity: sha512-ikJRQTk8hw5DEoFVxHG1Gn9T/xcjtdnOKIU1JTmGjZZlg9LST2mBLmcX3/ICIbgJydT2GOc15RnNy5mHmzfSew==}
     engines: {node: '>=4.0.0'}
 
   mquery@5.0.0:
     resolution: {integrity: sha512-iQMncpmEK8R8ncT8HJGsGc9Dsp8xcgYMVSbs5jgnm1lFHTZqMJTUWTDx1LBO8+mK3tPNZWFLBghQEIOULSTHZg==}
+    engines: {node: '>=14.0.0'}
+
+  mquery@5.0.1:
+    resolution: {integrity: sha512-C99lWV0TFI34pS008jBsi3JrE2xZPnTgUw5yApQR71nRP0hxLy8D5m1Lbbk83c8AQWJwdJ0329HzFtZ1MRTUIw==}
     engines: {node: '>=14.0.0'}
 
   ms@2.0.0:
@@ -2101,8 +2109,8 @@ packages:
     resolution: {integrity: sha512-9ZV9zg8vN8hO3Y25DhR7nUkJ1VDnBhq5O/JrXhFT9s6+F0gqytSASTHVfCFc2mJXaTfARroErplXlzFWwETZqQ==}
     engines: {node: '>=10.2.0'}
 
-  socks@2.8.7:
-    resolution: {integrity: sha512-HLpt+uLy/pxB+bum/9DzAgiKS8CX1EvbWxI4zlmgGCExImLdiad2iCwXT5Z4c9c3Eq8rP2318mPW2c+QbtjK8A==}
+  socks@2.8.10:
+    resolution: {integrity: sha512-e0VyvkVTwVYViNovRkZ9aodhxVlyoMn7eJhVUPxZ+eK9P/7CBkxvvsBOHqFPEH416726W8tLXXXjKwqgTErrCQ==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
 
   source-map-js@1.2.1:
@@ -2918,9 +2926,9 @@ snapshots:
 
   '@types/mime@1.3.5': {}
 
-  '@types/mongoose@5.11.97(socks@2.8.7)':
+  '@types/mongoose@5.11.97(socks@2.8.10)':
     dependencies:
-      mongoose: 8.20.1(socks@2.8.7)
+      mongoose: 8.24.7(socks@2.8.10)
     transitivePeerDependencies:
       - '@aws-sdk/credential-providers'
       - '@mongodb-js/zstd'
@@ -3661,7 +3669,7 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ip-address@10.1.0: {}
+  ip-address@10.7.4: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -3846,25 +3854,44 @@ snapshots:
     dependencies:
       bson: 5.5.1
       mongodb-connection-string-url: 2.6.0
-      socks: 2.8.7
+      socks: 2.8.10
     optionalDependencies:
       '@mongodb-js/saslprep': 1.3.2
 
-  mongodb@6.20.0(socks@2.8.7):
+  mongodb@6.20.0(socks@2.8.10):
     dependencies:
       '@mongodb-js/saslprep': 1.3.2
       bson: 6.10.4
       mongodb-connection-string-url: 3.0.2
     optionalDependencies:
-      socks: 2.8.7
+      socks: 2.8.10
 
-  mongoose@8.20.1(socks@2.8.7):
+  mongoose@8.20.1(socks@2.8.10):
     dependencies:
       bson: 6.10.4
       kareem: 2.6.3
-      mongodb: 6.20.0(socks@2.8.7)
+      mongodb: 6.20.0(socks@2.8.10)
       mpath: 0.9.0
       mquery: 5.0.0
+      ms: 2.1.3
+      sift: 17.1.3
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-providers'
+      - '@mongodb-js/zstd'
+      - gcp-metadata
+      - kerberos
+      - mongodb-client-encryption
+      - snappy
+      - socks
+      - supports-color
+
+  mongoose@8.24.7(socks@2.8.10):
+    dependencies:
+      bson: 6.10.4
+      kareem: 2.6.3
+      mongodb: 6.20.0(socks@2.8.10)
+      mpath: 0.9.0
+      mquery: 5.0.1
       ms: 2.1.3
       sift: 17.1.3
     transitivePeerDependencies:
@@ -3880,6 +3907,12 @@ snapshots:
   mpath@0.9.0: {}
 
   mquery@5.0.0:
+    dependencies:
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+
+  mquery@5.0.1:
     dependencies:
       debug: 4.4.3
     transitivePeerDependencies:
@@ -4263,9 +4296,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  socks@2.8.7:
+  socks@2.8.10:
     dependencies:
-      ip-address: 10.1.0
+      ip-address: 10.7.4
       smart-buffer: 4.2.0
 
   source-map-js@1.2.1: {}

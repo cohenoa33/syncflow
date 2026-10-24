@@ -11,7 +11,7 @@
     "@syncflow/agent-node": "workspace:*",
     "dotenv": "^17.2.3",
     "express": "^4.22.3",
-    "mongoose": "^8.0.3"
+    "mongoose": "^8.24.7"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
