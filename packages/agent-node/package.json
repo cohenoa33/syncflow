@@ -21,7 +21,7 @@
   "author": "Noa Rabin Cohen",
   "license": "MIT",
   "dependencies": {
-    "socket.io-client": "^4.7.2",
+    "socket.io-client": "^4.8.4",
     "uuid": "8.3.2"
   },
   "devDependencies": {
