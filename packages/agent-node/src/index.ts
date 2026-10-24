@@ -233,7 +233,7 @@ export class SyncFlowAgent {
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: Infinity
     });
 
     this.socket.on("connect", () => {
