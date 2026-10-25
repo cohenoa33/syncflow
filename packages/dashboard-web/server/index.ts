@@ -14,10 +14,15 @@ import { registerInsightsRoutes } from "./routes/insights";
 import { registerConfigRoutes } from "./routes/config";
 import { registerMetricsRoutes } from "./routes/metrics";
 import { registerAlertsRoutes } from "./routes/alerts";
+import { registerHealthRoutes } from "./routes/health";
 import { startAlertEvaluator } from "./alerts/evaluator";
 import { startAlertCleanup } from "./alerts/cleanup";
 import { serveStaticUi } from "./static";
 import { requireApiKey } from "./auth";
+import {
+  createShutdownHandle,
+  registerShutdownSignals
+} from "./shutdown";
 import {
   getAuthConfig,
   initializeTenantsConfig,
@@ -87,6 +92,10 @@ async function main() {
   // This is the ONLY /api/* endpoint that is intentionally public
   registerConfigRoutes(app);
 
+  // /healthz is outside /api so not covered by requireApiKey; register before
+  // serveStaticUi's catch-all so the SPA shell doesn't eat it.
+  registerHealthRoutes(app);
+
   // Protected API routes - ALL /api/* routes registered after this point are protected
   // This middleware enforces tenant-scoped authentication for all /api endpoints
   app.use("/api", requireApiKey);
@@ -109,6 +118,9 @@ async function main() {
   httpServer.listen(PORT, () => {
     console.log(`[Dashboard] running on port ${PORT}`);
   });
+
+  const shutdownHandle = createShutdownHandle({ httpServer, io });
+  registerShutdownSignals(shutdownHandle);
 }
 
 main();
